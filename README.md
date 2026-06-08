@@ -23,6 +23,20 @@ opening a web browser.
 - A Plex server with at least one music library
 - A Plex token
 
+## Installation
+
+Install Plexbar as a standalone command with `uv`:
+
+```bash
+uv tool install plexbar
+```
+
+Run Plexbar:
+
+```bash
+plexbar
+```
+
 ## Installation for development
 
 Clone the repository and sync dependencies with `uv`:
