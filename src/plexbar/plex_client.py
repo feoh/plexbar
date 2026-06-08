@@ -83,14 +83,25 @@ class PlexMusicClient:
         ]
 
     def search(self, query: str) -> list[BrowserItem]:
-        """Search the configured music library."""
+        """Search the configured music library by title.
 
-        results = self.library.search(query=query)
+        PlexAPI's ``MusicSection.search`` does not accept a ``query`` keyword;
+        unknown keywords are treated as filter fields, which can raise for music
+        libraries. Search each supported music type by title instead.
+        """
+
         items: list[BrowserItem] = []
-        for result in results:
-            item = self._item_from_result(result)
-            if item is not None:
-                items.append(item)
+        for libtype in ("artist", "album", "track"):
+            results = self.library.search(title=query, libtype=libtype)
+            for result in results:
+                item = self._item_from_result(result)
+                if item is not None:
+                    items.append(item)
+        items.extend(
+            playlist
+            for playlist in self.playlists()
+            if query.casefold() in playlist.title.casefold()
+        )
         return items
 
     def playable_tracks(self, item: BrowserItem) -> list[QueueTrack]:
