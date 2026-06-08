@@ -1,6 +1,6 @@
 [project]
 name = "plexbar"
-version = "0.1.1"
+version = "3.14"
 description = "A command-line TUI music player for Plex"
 readme = "README.md"
 authors = [{ name = "Christopher Patti", email = "feoh@feoh.org" }]
