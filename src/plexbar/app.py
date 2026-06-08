@@ -260,6 +260,13 @@ class PlexbarApp(App[None]):
         browser.focus()
         self.set_status(status)
 
+    async def action_quit(self) -> None:
+        """Stop playback before exiting Plexbar."""
+
+        if self.player is not None:
+            self.player.stop()
+        self.exit()
+
     def action_search(self) -> None:
         search = self.query_one("#search", Input)
         search.display = True
