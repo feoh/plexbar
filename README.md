@@ -1,59 +1,82 @@
 # Plexbar
 
-Plexbar is a command-line TUI music player for Plex. It lets you browse and play
-Plex music without opening a web browser.
+Plexbar is a keyboard-driven terminal music player for Plex. It gives you a
+simple Textual TUI for browsing and playing your Plex music library without
+opening a web browser.
 
-## Status
+## Features
 
-This is an MVP skeleton. It supports first-run configuration, basic Plex music
-browsing, queue management, and one-track-at-a-time playback through local
-`mpv`.
+- First-run Plex connection setup
+- Browse by Artists, Albums, Tracks, and Playlists
+- Search your Plex music library
+- Queue tracks, albums, artists, and playlists
+- Play, pause/resume, stop, and skip with keyboard shortcuts
+- Local playback through `mpv`
 
 ## Requirements
 
 - Python 3.12+
 - [`uv`](https://docs.astral.sh/uv/)
-- `mpv` installed and available on `PATH`
-- A Plex server with a music library
+- [`mpv`](https://mpv.io/) installed and available on `PATH`
+- A Plex server with at least one music library
 - A Plex token
 
-## Install dependencies
+## Installation for development
+
+Clone the repository and sync dependencies with `uv`:
 
 ```bash
+git clone git@github.com:feoh/plexbar.git
+cd plexbar
 uv sync
 ```
 
-## Run
+Run Plexbar from the project checkout:
 
 ```bash
 uv run plexbar
 ```
 
-On first launch, Plexbar prompts for:
+## First-run setup
 
-1. Plex base URL, for example `http://127.0.0.1:32400`
+If `~/.config/plexbar/config.toml` does not exist, Plexbar opens a setup screen
+and prompts for:
+
+1. Plex base URL, for example `http://puppy:32400` or `http://127.0.0.1:32400`
 2. Plex token
 3. Default music library
 
-Configuration is saved to:
+The config file is written to:
 
 ```text
 ~/.config/plexbar/config.toml
 ```
 
-The file is written with user-only permissions where supported.
+Plexbar writes this file with user-only permissions where supported. Do not
+commit or share your Plex token.
 
-## Browsing
+### Finding your Plex token
 
-The top-level browser includes:
+One common method:
+
+1. Open Plex Web and sign in.
+2. Open browser developer tools.
+3. Go to the Network tab.
+4. Refresh Plex Web or browse to a media item.
+5. Search requests for `X-Plex-Token`.
+6. Copy the token value only.
+
+## Usage
+
+The top-level browser contains:
 
 - Artists
 - Albums
 - Tracks
 - Playlists
 
-Press `Enter` to drill down through artists, albums, and playlists. Press
-`Enter` on a track to enqueue it.
+Press `Enter` to drill down into artists, albums, and playlists. Press `Enter`
+on a track to enqueue it.
 
 ## Keybindings
 
@@ -68,8 +91,17 @@ Press `Enter` to drill down through artists, albums, and playlists. Press
 | `s` | Stop playback |
 | `q` | Quit |
 
-## Notes
+## Local validation
 
-Plexbar currently controls `mpv` by launching it as a local subprocess for each
-track. Future versions may switch to mpv IPC for richer playback state and
-automatic end-of-track advancement.
+```bash
+uv run ruff check .
+uv run ruff format --check .
+uv run pytest
+uv run mypy src/plexbar tests
+```
+
+## Current limitations
+
+Plexbar currently launches `mpv` as a subprocess for each track. Future versions
+may switch to mpv IPC for richer playback state and automatic end-of-track
+advancement.
