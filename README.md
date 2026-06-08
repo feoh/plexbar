@@ -4,6 +4,8 @@ Plexbar is a keyboard-driven terminal music player for Plex. It gives you a
 simple Textual TUI for browsing and playing your Plex music library without
 opening a web browser.
 
+![PlexBar screenshot](PlexBar.png)
+
 ## Features
 
 - First-run Plex connection setup
