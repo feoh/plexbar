@@ -1,0 +1,23 @@
+[project]
+name = "plexbar"
+version = "0.1.0"
+description = "A command-line TUI music player for Plex"
+readme = "README.md"
+authors = [{ name = "Christopher Patti", email = "feoh@feoh.org" }]
+requires-python = ">=3.12"
+dependencies = ["platformdirs>=4.10.0", "plexapi>=4.18.1", "textual>=8.2.7"]
+
+[project.scripts]
+plexbar = "plexbar.app:main"
+
+[build-system]
+requires = ["uv_build>=0.9.18,<0.10.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "mypy>=2.1.0",
+    "pre-commit>=4.6.0",
+    "pytest>=9.0.3",
+    "ruff>=0.15.16",
+]
