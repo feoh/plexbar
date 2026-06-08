@@ -404,7 +404,7 @@ wheels = [
 
 [[package]]
 name = "plexbar"
-version = "3.14"
+version = "0.1.2"
 source = { editable = "." }
 dependencies = [
     { name = "platformdirs" },
