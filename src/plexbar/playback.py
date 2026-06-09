@@ -29,9 +29,10 @@ class PlaybackQueue:
     def append(self, tracks: list[QueueTrack]) -> None:
         """Append tracks to the queue."""
 
+        first_new_index = len(self.tracks)
         self.tracks.extend(tracks)
-        if self.current_index == -1 and self.tracks:
-            self.current_index = 0
+        if self.current_index == -1 and tracks:
+            self.current_index = first_new_index
 
     def replace(self, tracks: list[QueueTrack]) -> QueueTrack | None:
         """Replace the queue and return the first track."""
@@ -99,6 +100,15 @@ class MpvPlayer:
         self._process.stdin.write("p\n")
         self._process.stdin.flush()
         self._paused = not self._paused
+
+    def reap_finished(self) -> bool:
+        """Clear and report a naturally finished mpv process."""
+
+        if self._process is None or self._process.poll() is None:
+            return False
+        self._process = None
+        self._paused = False
+        return True
 
     def stop(self) -> None:
         """Stop mpv if it is running."""

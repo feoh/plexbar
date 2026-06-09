@@ -207,6 +207,7 @@ class PlexbarApp(App[None]):
 
     def on_mount(self) -> None:
         self.query_one("#search", Input).display = False
+        self.set_interval(0.5, self.advance_finished_track)
         if config_exists():
             try:
                 self.start_with_config(load_config())
@@ -344,9 +345,21 @@ class PlexbarApp(App[None]):
             self.player.pause_resume()
 
     def action_next_track(self) -> None:
+        self.play_next_track("End of queue.")
+
+    def advance_finished_track(self) -> None:
+        """Continue playback when mpv exits at the end of a track."""
+
+        if self.player is None or not self.player.reap_finished():
+            return
+        self.play_next_track("End of queue.")
+
+    def play_next_track(self, end_status: str) -> None:
+        """Advance the queue and play the next track, if any."""
+
         track = self.queue.next()
         if track is None:
-            self.set_status("End of queue.")
+            self.set_status(end_status)
             self.refresh_queue()
             return
         self.play(track)

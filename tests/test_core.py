@@ -2,8 +2,9 @@ from pathlib import Path
 
 import pytest
 
+from plexbar import playback
 from plexbar.models import BrowserItem, ItemKind, QueueTrack
-from plexbar.playback import PlaybackQueue
+from plexbar.playback import MpvPlayer, PlaybackQueue
 from plexbar.settings import PlexbarConfig, load_config, save_config
 
 
@@ -41,6 +42,49 @@ def test_queue_append_replace_and_next() -> None:
     assert queue.current == second
     assert queue.next() == first
     assert queue.next() is None
+
+    queue.append([second])
+    assert queue.current == second
+
+
+def test_mpv_player_reaps_finished_process(monkeypatch: pytest.MonkeyPatch) -> None:
+    track = QueueTrack("One", "Artist", "Album", "http://example.test/one.mp3")
+
+    class FakeProcess:
+        stdin = None
+
+        def __init__(self) -> None:
+            self.returncode: int | None = None
+            self.terminated = False
+
+        def poll(self) -> int | None:
+            return self.returncode
+
+        def terminate(self) -> None:
+            self.terminated = True
+            self.returncode = 0
+
+        def wait(self, timeout: int) -> int:
+            return 0
+
+        def kill(self) -> None:
+            self.returncode = -9
+
+    fake_process = FakeProcess()
+
+    def fake_popen(*_args: object, **_kwargs: object) -> FakeProcess:
+        return fake_process
+
+    monkeypatch.setattr(playback.shutil, "which", lambda _name: "/usr/bin/mpv")
+    monkeypatch.setattr(playback.subprocess, "Popen", fake_popen)
+
+    player = MpvPlayer()
+    player.play(track)
+    assert player.reap_finished() is False
+
+    fake_process.returncode = 0
+    assert player.reap_finished() is True
+    assert player.reap_finished() is False
 
 
 def test_browser_item_display_title() -> None:
