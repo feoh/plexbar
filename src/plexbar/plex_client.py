@@ -136,6 +136,7 @@ class PlexMusicClient:
             artist=_safe_title(track, "grandparentTitle"),
             album=_safe_title(track, "parentTitle"),
             stream_url=track.getStreamURL(),
+            artwork_url=_artwork_url(track),
         )
 
     def _default_music_library(self, preferred_name: str | None) -> MusicSection:
@@ -182,6 +183,17 @@ def _track_subtitle(track: Track) -> str:
 
 def _safe_title(item: Any, attr: str) -> str:
     return str(getattr(item, attr, "") or "")
+
+
+def _artwork_url(track: Track) -> str:
+    for attr in ("squareArtUrl", "thumbUrl", "artUrl"):
+        try:
+            url = getattr(track, attr, None)
+        except Exception:  # noqa: BLE001 - artwork is optional metadata
+            continue
+        if url:
+            return str(url)
+    return ""
 
 
 def _is_track(item: Any) -> bool:

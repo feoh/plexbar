@@ -1,6 +1,8 @@
 """Textual application for Plexbar."""
 
 from collections.abc import Callable
+from io import BytesIO
+from urllib.request import urlopen
 
 from textual import on, work
 from textual.app import App, ComposeResult
@@ -17,6 +19,7 @@ from textual.widgets import (
     ListView,
     Static,
 )
+from textual_image.widget import AutoImage
 
 from plexbar.models import BrowserItem, ItemKind, QueueTrack
 from plexbar.playback import MpvNotFoundError, MpvPlayer, PlaybackQueue
@@ -164,6 +167,12 @@ class PlexbarApp(App[None]):
         border-top: solid $primary;
     }
 
+    #cover-art {
+        width: 100%;
+        height: 18;
+        margin: 0 1 1 1;
+    }
+
     .panel-title {
         text-style: bold;
         padding: 0 1;
@@ -187,6 +196,7 @@ class PlexbarApp(App[None]):
         self.client: PlexMusicClient | None = None
         self.player: MpvPlayer | None = None
         self.queue = PlaybackQueue()
+        self.current_track: QueueTrack | None = None
         self.history: list[list[BrowserItem]] = []
         self.items: list[BrowserItem] = []
 
@@ -199,6 +209,7 @@ class PlexbarApp(App[None]):
                 yield ListView(id="browser-list")
             with Vertical(id="side"):
                 yield Label("Now Playing", classes="panel-title")
+                yield AutoImage(id="cover-art")
                 yield Static("Nothing playing", id="now-playing")
                 yield Label("Queue", classes="panel-title")
                 yield Static("Queue is empty", id="queue")
@@ -207,6 +218,7 @@ class PlexbarApp(App[None]):
 
     def on_mount(self) -> None:
         self.query_one("#search", Input).display = False
+        self.query_one("#cover-art", AutoImage).display = False
         self.set_interval(0.5, self.advance_finished_track)
         if config_exists():
             try:
@@ -359,6 +371,7 @@ class PlexbarApp(App[None]):
 
         track = self.queue.next()
         if track is None:
+            self.clear_now_playing()
             self.set_status(end_status)
             self.refresh_queue()
             return
@@ -368,6 +381,7 @@ class PlexbarApp(App[None]):
     def action_stop(self) -> None:
         if self.player is not None:
             self.player.stop()
+        self.clear_now_playing()
         self.set_status("Stopped.")
 
     def append_item(self, item: BrowserItem) -> None:
@@ -385,9 +399,45 @@ class PlexbarApp(App[None]):
         if self.player is None:
             self.set_status("mpv is not available.")
             return
+        self.current_track = track
         self.player.play(track)
         self.query_one("#now-playing", Static).update(track.label)
+        self.show_cover_art(track)
         self.set_status(f"Playing {track.label}")
+
+    def show_cover_art(self, track: QueueTrack) -> None:
+        """Load and display the current track's Plex artwork."""
+
+        cover_art = self.query_one("#cover-art", AutoImage)
+        cover_art.image = None
+        cover_art.display = False
+        if track.artwork_url:
+            self._load_cover_art(track.artwork_url)
+
+    @work(thread=True)
+    def _load_cover_art(self, artwork_url: str) -> None:
+        try:
+            with urlopen(artwork_url, timeout=10) as response:
+                image_bytes = response.read()
+        except Exception:  # noqa: BLE001 - missing artwork should not stop playback
+            return
+        self.call_from_thread(self._set_cover_art, artwork_url, image_bytes)
+
+    def _set_cover_art(self, artwork_url: str, image_bytes: bytes) -> None:
+        if self.current_track is None or self.current_track.artwork_url != artwork_url:
+            return
+        cover_art = self.query_one("#cover-art", AutoImage)
+        cover_art.image = BytesIO(image_bytes)
+        cover_art.display = True
+
+    def clear_now_playing(self) -> None:
+        """Clear the now-playing label and cover art."""
+
+        self.current_track = None
+        self.query_one("#now-playing", Static).update("Nothing playing")
+        cover_art = self.query_one("#cover-art", AutoImage)
+        cover_art.image = None
+        cover_art.display = False
 
     def focused_item(self) -> BrowserItem | None:
         browser = self.query_one("#browser-list", ListView)

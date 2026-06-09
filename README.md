@@ -12,6 +12,7 @@ opening a web browser.
 - Browse by Artists, Albums, Tracks, and Playlists
 - Search your Plex music library
 - Queue tracks, albums, artists, and playlists
+- Show cover art for the currently playing track or album
 - Play, pause/resume, stop, and skip with keyboard shortcuts
 - Local playback through `mpv`
 
