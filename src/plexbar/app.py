@@ -213,10 +213,10 @@ class PlexbarApp(App[None]):
         Binding("enter", "select", "Select/enqueue"),
         Binding("p", "play_now", "Play now"),
         Binding("a", "append", "Append"),
-        Binding("space", "pause_resume", "Pause/resume"),
-        Binding("n", "next_track", "Next"),
-        Binding("s", "stop", "Stop"),
-        Binding("f", "toggle_focus", "Focus now playing"),
+        Binding("space", "pause_resume", "Pause/resume", priority=True),
+        Binding("n", "next_track", "Next", priority=True),
+        Binding("s", "stop", "Stop", priority=True),
+        Binding("f", "toggle_focus", "Focus now playing", priority=True),
     ]
 
     def __init__(self) -> None:
