@@ -216,6 +216,7 @@ class PlexbarApp(App[None]):
         Binding("space", "pause_resume", "Pause/resume"),
         Binding("n", "next_track", "Next"),
         Binding("s", "stop", "Stop"),
+        Binding("f", "toggle_focus", "Focus now playing"),
     ]
 
     def __init__(self) -> None:
@@ -227,6 +228,7 @@ class PlexbarApp(App[None]):
         self.current_track: QueueTrack | None = None
         self.history: list[list[BrowserItem]] = []
         self.items: list[BrowserItem] = []
+        self._focus_now_playing = False
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -406,6 +408,19 @@ class PlexbarApp(App[None]):
         self.play(track)
         self.refresh_queue()
 
+    def action_toggle_focus(self) -> None:
+        """Hide the browse pane so now-playing fills the screen."""
+
+        self._focus_now_playing = not self._focus_now_playing
+        self.query_one("#browser", Vertical).display = not self._focus_now_playing
+        cover_art = self.query_one("#cover-art", AutoImage)
+        if self._focus_now_playing:
+            cover_art.styles.width = "auto"
+            cover_art.styles.height = "auto"
+        else:
+            cover_art.styles.width = "100%"
+            cover_art.styles.height = 18
+
     def action_stop(self) -> None:
         if self.player is not None:
             self.player.stop()
@@ -466,6 +481,12 @@ class PlexbarApp(App[None]):
         cover_art = self.query_one("#cover-art", AutoImage)
         cover_art.image = None
         cover_art.display = False
+        if self._focus_now_playing:
+            self._focus_now_playing = False
+            self.query_one("#browser", Vertical).display = True
+            cover_art.styles.width = "100%"
+            cover_art.styles.height = 18
+            self.query_one("#browser-list", ListView).focus()
 
     def focused_item(self) -> BrowserItem | None:
         browser = self.query_one("#browser-list", ListView)
