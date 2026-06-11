@@ -47,42 +47,93 @@ def test_queue_append_replace_and_next() -> None:
     assert queue.current == second
 
 
-def test_mpv_player_reaps_finished_process(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_mpv_player_uses_persistent_ipc(monkeypatch: pytest.MonkeyPatch) -> None:
     track = QueueTrack("One", "Artist", "Album", "http://example.test/one.mp3")
-
-    class FakeProcess:
-        stdin = None
-
-        def __init__(self) -> None:
-            self.returncode: int | None = None
-            self.terminated = False
-
-        def poll(self) -> int | None:
-            return self.returncode
-
-        def terminate(self) -> None:
-            self.terminated = True
-            self.returncode = 0
-
-        def wait(self, timeout: int) -> int:
-            return 0
-
-        def kill(self) -> None:
-            self.returncode = -9
-
-    fake_process = FakeProcess()
-
-    def fake_popen(*_args: object, **_kwargs: object) -> FakeProcess:
-        return fake_process
+    commands: list[list[object]] = []
+    idle_active = False
 
     monkeypatch.setattr(playback.shutil, "which", lambda _name: "/usr/bin/mpv")
-    monkeypatch.setattr(playback.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(MpvPlayer, "_start_mpv", lambda _self: None)
+    monkeypatch.setattr(MpvPlayer, "is_running", property(lambda _self: True))
+
+    def fake_command(self: MpvPlayer, command: list[object]) -> dict[str, object]:
+        commands.append(command)
+        if command == ["get_property", "idle-active"]:
+            return {"error": "success", "data": idle_active}
+        return {"error": "success"}
+
+    monkeypatch.setattr(MpvPlayer, "_command", fake_command)
+
+    player = MpvPlayer()
+    player.play(track)
+    player.pause_resume()
+    player.stop()
+
+    assert commands == [
+        ["loadfile", track.stream_url, "replace"],
+        ["cycle", "pause"],
+        ["stop"],
+    ]
+
+
+def test_mpv_ipc_ignores_events_after_command_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeSocket:
+        def __enter__(self) -> "FakeSocket":
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def settimeout(self, _timeout: float) -> None:
+            return None
+
+        def connect(self, _path: str) -> None:
+            return None
+
+        def sendall(self, _request: bytes) -> None:
+            return None
+
+        def recv(self, _buffer_size: int) -> bytes:
+            return (
+                b'{"data":{"playlist_entry_id":1},"request_id":1,"error":"success"}\n'
+                b'{"event":"start-file"}\n'
+            )
+
+    monkeypatch.setattr(playback.shutil, "which", lambda _name: "/usr/bin/mpv")
+    monkeypatch.setattr(MpvPlayer, "_start_mpv", lambda _self: None)
+    monkeypatch.setattr(playback.socket, "socket", lambda *_args: FakeSocket())
+
+    player = MpvPlayer()
+
+    assert player._request({"command": ["loadfile", "song.mp3", "replace"]}) == {
+        "data": {"playlist_entry_id": 1},
+        "request_id": 1,
+        "error": "success",
+    }
+
+
+def test_mpv_player_reaps_idle_track(monkeypatch: pytest.MonkeyPatch) -> None:
+    track = QueueTrack("One", "Artist", "Album", "http://example.test/one.mp3")
+    idle_active = False
+
+    monkeypatch.setattr(playback.shutil, "which", lambda _name: "/usr/bin/mpv")
+    monkeypatch.setattr(MpvPlayer, "_start_mpv", lambda _self: None)
+    monkeypatch.setattr(MpvPlayer, "is_running", property(lambda _self: True))
+
+    def fake_command(_self: MpvPlayer, command: list[object]) -> dict[str, object]:
+        if command == ["get_property", "idle-active"]:
+            return {"error": "success", "data": idle_active}
+        return {"error": "success"}
+
+    monkeypatch.setattr(MpvPlayer, "_command", fake_command)
 
     player = MpvPlayer()
     player.play(track)
     assert player.reap_finished() is False
 
-    fake_process.returncode = 0
+    idle_active = True
     assert player.reap_finished() is True
     assert player.reap_finished() is False
 

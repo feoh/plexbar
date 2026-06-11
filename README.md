@@ -108,8 +108,7 @@ uv run pytest
 uv run mypy src/plexbar tests
 ```
 
-## Current limitations
+## Playback
 
-Plexbar currently launches `mpv` as a subprocess for each track. Future versions
-may switch to mpv IPC for richer playback state and automatic end-of-track
-advancement.
+Plexbar keeps a persistent `mpv` process running and controls it through mpv's
+JSON IPC interface for responsive pause/resume, stop, and track changes.

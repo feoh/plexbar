@@ -5,7 +5,6 @@ from io import BytesIO
 from urllib.request import urlopen
 
 from plexapi.myplex import MyPlexPinLogin  # type: ignore[import-untyped]
-
 from textual import on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -306,7 +305,7 @@ class PlexbarApp(App[None]):
         """Stop playback before exiting Plexbar."""
 
         if self.player is not None:
-            self.player.stop()
+            self.player.close()
         self.exit()
 
     def action_search(self) -> None:
