@@ -22,7 +22,7 @@ opening a web browser.
 - [`uv`](https://docs.astral.sh/uv/)
 - [`mpv`](https://mpv.io/) installed and available on `PATH`
 - A Plex server with at least one music library
-- A Plex token
+- A Plex account that can access your Plex server
 
 ## Installation
 
@@ -60,7 +60,7 @@ If `~/.config/plexbar/config.toml` does not exist, Plexbar opens a setup screen
 and prompts for:
 
 1. Plex base URL, for example `http://puppy:32400` or `http://127.0.0.1:32400`
-2. Plex token
+2. Plex sign-in authorization in your browser
 3. Default music library
 
 The config file is written to:
@@ -69,19 +69,10 @@ The config file is written to:
 ~/.config/plexbar/config.toml
 ```
 
-Plexbar writes this file with user-only permissions where supported. Do not
-commit or share your Plex token.
-
-### Finding your Plex token
-
-One common method:
-
-1. Open Plex Web and sign in.
-2. Open browser developer tools.
-3. Go to the Network tab.
-4. Refresh Plex Web or browse to a media item.
-5. Search requests for `X-Plex-Token`.
-6. Copy the token value only.
+Plexbar writes this file with user-only permissions where supported. During setup,
+Plexbar receives a Plex token from Plex after browser authorization and saves only
+that token. It does not ask for or store your Plex password. Do not commit or
+share your Plex token.
 
 ## Usage
 

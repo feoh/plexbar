@@ -4,6 +4,8 @@ from collections.abc import Callable
 from io import BytesIO
 from urllib.request import urlopen
 
+from plexapi.myplex import MyPlexPinLogin  # type: ignore[import-untyped]
+
 from textual import on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -50,7 +52,7 @@ class SetupScreen(Screen[None]):
     }
 
     #setup-box {
-        width: 70;
+        width: 90;
         height: auto;
         border: round $accent;
         padding: 1 2;
@@ -67,16 +69,18 @@ class SetupScreen(Screen[None]):
         self._base_url = ""
         self._token = ""
         self._libraries: list[str] = []
+        self._auth_in_progress = False
 
     def compose(self) -> ComposeResult:
         with Vertical(id="setup-box"):
             yield Label("Plexbar first-run setup")
             yield Label("Plex base URL")
             yield Input(placeholder="http://127.0.0.1:32400", id="plex-url")
-            yield Label("Plex token")
-            yield Input(password=True, placeholder="Your Plex token", id="plex-token")
-            yield Button("Validate connection", id="validate", variant="primary")
-            yield Static("Enter your Plex connection details.", id="setup-status")
+            yield Button("Sign in with Plex", id="plex-sign-in", variant="primary")
+            yield Static(
+                "Enter your Plex server URL, then sign in with Plex to authorize Plexbar.",
+                id="setup-status",
+            )
             yield ListView(id="library-list")
         yield Footer()
 
@@ -84,35 +88,60 @@ class SetupScreen(Screen[None]):
         self.query_one("#library-list", ListView).display = False
         self.query_one("#plex-url", Input).focus()
 
-    @on(Button.Pressed, "#validate")
-    def validate_connection(self) -> None:
-        """Validate credentials and load music libraries."""
+    @on(Button.Pressed, "#plex-sign-in")
+    def sign_in_with_plex(self) -> None:
+        """Start Plex OAuth sign-in and validate the resulting token."""
 
+        if self._auth_in_progress:
+            return
         base_url = self.query_one("#plex-url", Input).value.strip()
-        token = self.query_one("#plex-token", Input).value.strip()
-        if not base_url or not token:
-            self._set_status("Plex URL and token are required.")
+        if not base_url:
+            self._set_status("Plex URL is required.")
             return
         self._base_url = base_url
-        self._token = token
-        self._set_status("Validating Plex connection…")
-        self._validate_connection(base_url, token)
+        self._auth_in_progress = True
+        self.query_one("#plex-sign-in", Button).disabled = True
+        self._set_status("Requesting Plex sign-in link…")
+        self._sign_in_with_plex(base_url)
 
     @work(thread=True)
-    def _validate_connection(self, base_url: str, token: str) -> None:
+    def _sign_in_with_plex(self, base_url: str) -> None:
         try:
+            pin_login = MyPlexPinLogin(oauth=True)
+            auth_url = pin_login.oauthUrl()
+            self.app.call_from_thread(self._show_auth_url, auth_url)
+            pin_login.run(timeout=300)
+            if not pin_login.waitForLogin() or not pin_login.token:
+                self.app.call_from_thread(
+                    self._show_validation_error,
+                    "Plex sign-in timed out or was cancelled.",
+                )
+                return
+            token = str(pin_login.token)
             libraries = PlexMusicClient.validate(base_url, token)
         except Exception as exc:  # noqa: BLE001 - display connection failures to user
             self.app.call_from_thread(self._show_validation_error, str(exc))
             return
-        self.app.call_from_thread(self._show_libraries, libraries)
+        self.app.call_from_thread(self._show_libraries, token, libraries)
+
+    def _show_auth_url(self, auth_url: str) -> None:
+        self._set_status(
+            "Sign in with Plex to authorize Plexbar. "
+            f"Open this URL in your browser:\n{auth_url}\n"
+            "Waiting for authorization…"
+        )
 
     def _show_validation_error(self, message: str) -> None:
+        self._auth_in_progress = False
+        self.query_one("#plex-sign-in", Button).disabled = False
         self._set_status(f"Connection failed: {message}")
 
-    def _show_libraries(self, libraries: list[str]) -> None:
+    def _show_libraries(self, token: str, libraries: list[str]) -> None:
+        self._auth_in_progress = False
+        self._token = token
         self._libraries = libraries
         if not libraries:
+            self.query_one("#plex-sign-in", Button).disabled = False
             self._set_status("Connected, but no music libraries were found.")
             return
         library_list = self.query_one("#library-list", ListView)
