@@ -15,10 +15,12 @@ class ItemKind(StrEnum):
     ALBUMS = "albums"
     TRACKS = "tracks"
     PLAYLISTS = "playlists"
+    GENRES = "genres"
     ARTIST = "artist"
     ALBUM = "album"
     TRACK = "track"
     PLAYLIST = "playlist"
+    GENRE = "genre"
     BACK = "back"
 
 

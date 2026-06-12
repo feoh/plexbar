@@ -33,6 +33,7 @@ class PlexMusicClient:
             BrowserItem("Albums", ItemKind.ALBUMS),
             BrowserItem("Tracks", ItemKind.TRACKS),
             BrowserItem("Playlists", ItemKind.PLAYLISTS),
+            BrowserItem("Genres", ItemKind.GENRES),
         ]
 
     def artists(self) -> list[BrowserItem]:
@@ -69,6 +70,11 @@ class PlexMusicClient:
             tracks = []
         return [self.track_item(track) for track in tracks]
 
+    def tracks_for_genre(self, genre: Any) -> list[BrowserItem]:
+        """Return track rows filtered by genre."""
+
+        return [self.track_item(track) for track in self._genre_tracks(genre)]
+
     def playlists(self) -> list[BrowserItem]:
         """Return music playlists."""
 
@@ -81,6 +87,17 @@ class PlexMusicClient:
             BrowserItem(str(playlist.title), ItemKind.PLAYLIST, playlist)
             for playlist in playlists
         ]
+
+    def genres(self) -> list[BrowserItem]:
+        """Return available track genres."""
+
+        genres = self.library.listFilterChoices("genre", libtype="track")
+        items: list[BrowserItem] = []
+        for genre in genres:
+            title = getattr(genre, "title", None)
+            if title:
+                items.append(BrowserItem(str(title), ItemKind.GENRE, genre))
+        return items
 
     def search(self, query: str) -> list[BrowserItem]:
         """Search the configured music library by title.
@@ -114,6 +131,10 @@ class PlexMusicClient:
         if item.kind is ItemKind.PLAYLIST and item.source is not None:
             return [
                 self.queue_track(track) for track in self._playlist_tracks(item.source)
+            ]
+        if item.kind is ItemKind.GENRE and item.source is not None:
+            return [
+                self.queue_track(track) for track in self._genre_tracks(item.source)
             ]
         if item.kind is ItemKind.ARTIST and item.source is not None:
             return [
@@ -152,6 +173,13 @@ class PlexMusicClient:
 
     def _playlist_tracks(self, playlist: Any) -> list[Track]:
         return [cast(Track, item) for item in playlist.items() if _is_track(item)]
+
+    def _genre_tracks(self, genre: Any) -> list[Track]:
+        return [
+            cast(Track, item)
+            for item in self.library.search(libtype="track", genre=genre)
+            if _is_track(item)
+        ]
 
     def _item_from_result(self, result: Any) -> BrowserItem | None:
         if isinstance(result, Artist):

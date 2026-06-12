@@ -9,9 +9,9 @@ opening a web browser.
 ## Features
 
 - First-run Plex connection setup
-- Browse by Artists, Albums, Tracks, and Playlists
+- Browse by Artists, Albums, Tracks, Playlists, and Genres
 - Search your Plex music library
-- Queue tracks, albums, artists, and playlists
+- Queue tracks, albums, artists, playlists, and genres
 - Show cover art for the currently playing track or album
 - Play, pause/resume, stop, and skip with keyboard shortcuts
 - Local playback through `mpv`
@@ -82,8 +82,9 @@ The top-level browser contains:
 - Albums
 - Tracks
 - Playlists
+- Genres
 
-Press `Enter` to drill down into artists, albums, and playlists. Press `Enter`
+Press `Enter` to drill down into artists, albums, playlists, and genres. Press `Enter`
 on a track to enqueue it.
 
 ## Keybindings
@@ -92,8 +93,8 @@ on a track to enqueue it.
 | --- | --- |
 | `/` | Search Plex music |
 | `Enter` | Select/drill down, or enqueue focused track |
-| `p` | Play focused track/album/artist/playlist immediately and replace queue |
-| `a` | Append focused track/album/artist/playlist to queue |
+| `p` | Play focused track/album/artist/playlist/genre immediately and replace queue |
+| `a` | Append focused track/album/artist/playlist/genre to queue |
 | `Space` | Pause/resume |
 | `n` | Next track |
 | `s` | Stop playback |

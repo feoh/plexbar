@@ -358,10 +358,14 @@ class PlexbarApp(App[None]):
             self.show_items(self.client.tracks(), "Tracks")
         elif item.kind is ItemKind.PLAYLISTS:
             self.show_items(self.client.playlists(), "Playlists")
+        elif item.kind is ItemKind.GENRES:
+            self.show_items(self.client.genres(), "Genres")
         elif item.kind is ItemKind.ARTIST:
             self.show_items(self.client.albums(item.source), f"Albums by {item.title}")
         elif item.kind in {ItemKind.ALBUM, ItemKind.PLAYLIST}:
             self.show_items(self.client.tracks(item.source), item.title)
+        elif item.kind is ItemKind.GENRE:
+            self.show_items(self.client.tracks_for_genre(item.source), item.title)
         elif item.kind is ItemKind.TRACK:
             self.append_item(item)
 

@@ -1,10 +1,12 @@
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
 from plexbar import playback
 from plexbar.models import BrowserItem, ItemKind, QueueTrack
 from plexbar.playback import MpvPlayer, PlaybackQueue
+from plexbar.plex_client import PlexMusicClient
 from plexbar.settings import PlexbarConfig, load_config, save_config
 
 
@@ -142,3 +144,33 @@ def test_browser_item_display_title() -> None:
     item = BrowserItem("Track", ItemKind.TRACK, subtitle="Artist — Album")
 
     assert item.display_title == "Track — Artist — Album"
+
+
+def test_root_items_include_genres() -> None:
+    client = PlexMusicClient.__new__(PlexMusicClient)
+
+    assert client.root_items()[-1] == BrowserItem("Genres", ItemKind.GENRES)
+
+
+def test_genres_use_track_filter_choices() -> None:
+    class FakeGenre:
+        title = "Jazz"
+
+    class FakeLibrary:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, str]] = []
+
+        def listFilterChoices(self, field: str, libtype: str) -> list[FakeGenre]:
+            self.calls.append((field, libtype))
+            return [FakeGenre()]
+
+    library = FakeLibrary()
+    client = cast(Any, PlexMusicClient.__new__(PlexMusicClient))
+    client.library = library
+
+    [genre] = client.genres()
+
+    assert genre.title == "Jazz"
+    assert genre.kind is ItemKind.GENRE
+    assert isinstance(genre.source, FakeGenre)
+    assert library.calls == [("genre", "track")]
