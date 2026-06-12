@@ -348,26 +348,41 @@ class PlexbarApp(App[None]):
 
         if self.client is None:
             return
-        if item.kind is ItemKind.BACK:
-            self.go_back()
-        elif item.kind is ItemKind.ARTISTS:
-            self.show_items(self.client.artists(), "Artists")
-        elif item.kind is ItemKind.ALBUMS:
-            self.show_items(self.client.albums(), "Albums")
-        elif item.kind is ItemKind.TRACKS:
-            self.show_items(self.client.tracks(), "Tracks")
-        elif item.kind is ItemKind.PLAYLISTS:
-            self.show_items(self.client.playlists(), "Playlists")
-        elif item.kind is ItemKind.GENRES:
-            self.show_items(self.client.genres(), "Genres")
-        elif item.kind is ItemKind.ARTIST:
-            self.show_items(self.client.albums(item.source), f"Albums by {item.title}")
-        elif item.kind in {ItemKind.ALBUM, ItemKind.PLAYLIST}:
-            self.show_items(self.client.tracks(item.source), item.title)
-        elif item.kind is ItemKind.GENRE:
-            self.show_items(self.client.tracks_for_genre(item.source), item.title)
-        elif item.kind is ItemKind.TRACK:
-            self.append_item(item)
+        match item.kind:
+            case ItemKind.BACK:
+                self.go_back()
+            case ItemKind.ARTISTS:
+                self.show_items(self.client.artists(), "Artists")
+            case ItemKind.ALBUMS:
+                self.show_items(self.client.albums(), "Albums")
+            case ItemKind.TRACKS:
+                self.show_items(self.client.tracks(), "Tracks")
+            case ItemKind.PLAYLISTS:
+                self.show_items(self.client.playlists(), "Playlists")
+            case ItemKind.GENRES:
+                self.show_items(self.client.genres(), "Genres")
+            case ItemKind.ARTIST:
+                self.show_items(
+                    self.client.albums(item.source), f"Albums by {item.title}"
+                )
+            case ItemKind.ALBUM | ItemKind.PLAYLIST:
+                self.show_items(self.client.tracks(item.source), item.title)
+            case ItemKind.GENRE:
+                self.show_items(self.client.genre_browse_items(item.source), item.title)
+            case ItemKind.GENRE_ARTISTS:
+                self.show_items(self.client.artists_for_genre(item.source), item.title)
+            case ItemKind.GENRE_ALBUMS:
+                self.show_items(self.client.albums_for_genre(item.source), item.title)
+            case ItemKind.GENRE_ARTIST if item.source is not None:
+                genre, artist = item.source
+                self.show_items(self.client.albums_for_genre(genre, artist), item.title)
+            case ItemKind.GENRE_ALBUM if item.source is not None:
+                genre, album = item.source
+                self.show_items(
+                    self.client.tracks_for_genre_album(genre, album), item.title
+                )
+            case ItemKind.TRACK:
+                self.append_item(item)
 
     def action_play_now(self) -> None:
         item = self.focused_item()

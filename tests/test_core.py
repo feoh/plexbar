@@ -6,7 +6,7 @@ import pytest
 from plexbar import playback
 from plexbar.models import BrowserItem, ItemKind, QueueTrack
 from plexbar.playback import MpvPlayer, PlaybackQueue
-from plexbar.plex_client import PlexMusicClient
+from plexbar.plex_client import GenreArtist, PlexMusicClient
 from plexbar.settings import PlexbarConfig, load_config, save_config
 
 
@@ -174,3 +174,44 @@ def test_genres_use_track_filter_choices() -> None:
     assert genre.kind is ItemKind.GENRE
     assert isinstance(genre.source, FakeGenre)
     assert library.calls == [("genre", "track")]
+
+
+def test_genre_browse_items_offer_artist_and_album_grouping() -> None:
+    genre = object()
+    client = PlexMusicClient.__new__(PlexMusicClient)
+
+    assert client.genre_browse_items(genre) == [
+        BrowserItem("By Artist", ItemKind.GENRE_ARTISTS, genre),
+        BrowserItem("By Album", ItemKind.GENRE_ALBUMS, genre),
+    ]
+
+
+def test_genre_artists_are_deduplicated_from_matching_tracks() -> None:
+    class FakeGenre:
+        pass
+
+    class FakeArtist:
+        title = "The Artist"
+        ratingKey = "artist-1"
+
+    class FakeTrack:
+        TYPE = "track"
+
+        def artist(self) -> FakeArtist:
+            return FakeArtist()
+
+    class FakeLibrary:
+        def search(self, libtype: str, genre: FakeGenre) -> list[FakeTrack]:
+            return [FakeTrack(), FakeTrack()]
+
+    genre = FakeGenre()
+    client = cast(Any, PlexMusicClient.__new__(PlexMusicClient))
+    client.library = FakeLibrary()
+
+    [artist] = client.artists_for_genre(genre)
+
+    assert artist.title == "The Artist"
+    assert artist.kind is ItemKind.GENRE_ARTIST
+    assert artist.source is not None
+    assert artist.source[0] is genre
+    assert artist.source[1] == GenreArtist("The Artist", "artist-1")

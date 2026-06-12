@@ -84,8 +84,9 @@ The top-level browser contains:
 - Playlists
 - Genres
 
-Press `Enter` to drill down into artists, albums, playlists, and genres. Press `Enter`
-on a track to enqueue it.
+Press `Enter` to drill down into artists, albums, playlists, and genres. Genre
+browsing offers "By Artist" and "By Album" groupings before listing tracks. Press
+`Enter` on a track to enqueue it.
 
 ## Keybindings
 
@@ -93,8 +94,8 @@ on a track to enqueue it.
 | --- | --- |
 | `/` | Search Plex music |
 | `Enter` | Select/drill down, or enqueue focused track |
-| `p` | Play focused track/album/artist/playlist/genre immediately and replace queue |
-| `a` | Append focused track/album/artist/playlist/genre to queue |
+| `p` | Play focused track/album/artist/playlist/genre artist/genre album immediately and replace queue |
+| `a` | Append focused track/album/artist/playlist/genre artist/genre album to queue |
 | `Space` | Pause/resume |
 | `n` | Next track |
 | `s` | Stop playback |
