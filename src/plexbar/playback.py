@@ -6,6 +6,7 @@ import socket
 import subprocess
 import tempfile
 import time
+from contextlib import suppress
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -81,6 +82,12 @@ class MpvPlayer:
         self._loaded = False
         self._request_id = 0
         self._start_mpv()
+
+    def __del__(self) -> None:
+        """Best-effort cleanup if a caller forgets to close the player."""
+
+        with suppress(Exception):
+            self.close()
 
     @property
     def is_running(self) -> bool:

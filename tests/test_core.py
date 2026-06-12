@@ -2,8 +2,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
-
-from plexbar import playback
+from plexbar import app, playback
 from plexbar.models import BrowserItem, ItemKind, QueueTrack
 from plexbar.playback import MpvPlayer, PlaybackQueue
 from plexbar.plex_client import GenreArtist, PlexMusicClient
@@ -144,6 +143,47 @@ def test_browser_item_display_title() -> None:
     item = BrowserItem("Track", ItemKind.TRACK, subtitle="Artist — Album")
 
     assert item.display_title == "Track — Artist — Album"
+
+
+def test_prepare_auth_url_copies_and_opens_browser(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    copied_urls: list[str] = []
+    opened_calls: list[tuple[str, int, bool]] = []
+
+    monkeypatch.setattr(app.pyperclip, "copy", copied_urls.append)
+
+    def fake_open(url: str, new: int, autoraise: bool) -> bool:
+        opened_calls.append((url, new, autoraise))
+        return True
+
+    monkeypatch.setattr(app.webbrowser, "open", fake_open)
+
+    messages = app.prepare_auth_url("https://plex.example.test/auth")
+
+    assert copied_urls == ["https://plex.example.test/auth"]
+    assert opened_calls == [("https://plex.example.test/auth", 1, True)]
+    assert messages == [
+        "Copied the sign-in URL to your clipboard.",
+        "Opened your browser for Plex sign-in.",
+    ]
+
+
+def test_prepare_auth_url_reports_clipboard_and_browser_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_copy(_url: str) -> None:
+        raise RuntimeError("no clipboard")
+
+    monkeypatch.setattr(app.pyperclip, "copy", fake_copy)
+    monkeypatch.setattr(app.webbrowser, "open", lambda *_args, **_kwargs: False)
+
+    messages = app.prepare_auth_url("https://plex.example.test/auth")
+
+    assert messages == [
+        "Could not copy the sign-in URL to the clipboard: no clipboard",
+        "Could not open your browser automatically.",
+    ]
 
 
 def test_root_items_include_genres() -> None:

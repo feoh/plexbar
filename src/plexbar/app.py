@@ -1,9 +1,11 @@
 """Textual application for Plexbar."""
 
+import webbrowser
 from collections.abc import Callable
 from io import BytesIO
 from urllib.request import urlopen
 
+import pyperclip  # type: ignore[import-untyped]
 from plexapi.myplex import MyPlexPinLogin  # type: ignore[import-untyped]
 from textual import on, work
 from textual.app import App, ComposeResult
@@ -32,6 +34,30 @@ from plexbar.settings import (
     load_config,
     save_config,
 )
+
+
+def prepare_auth_url(auth_url: str) -> list[str]:
+    """Copy and open the Plex OAuth URL, returning user-visible status lines."""
+
+    messages: list[str] = []
+    try:
+        pyperclip.copy(auth_url)
+    except Exception as exc:  # noqa: BLE001 - clipboard support varies by platform
+        messages.append(f"Could not copy the sign-in URL to the clipboard: {exc}")
+    else:
+        messages.append("Copied the sign-in URL to your clipboard.")
+
+    try:
+        opened = webbrowser.open(auth_url, new=1, autoraise=True)
+    except Exception as exc:  # noqa: BLE001 - browser launch support varies by platform
+        messages.append(f"Could not open your browser automatically: {exc}")
+    else:
+        if opened:
+            messages.append("Opened your browser for Plex sign-in.")
+        else:
+            messages.append("Could not open your browser automatically.")
+
+    return messages
 
 
 class BrowserRow(ListItem):
@@ -108,7 +134,8 @@ class SetupScreen(Screen[None]):
         try:
             pin_login = MyPlexPinLogin(oauth=True)
             auth_url = pin_login.oauthUrl()
-            self.app.call_from_thread(self._show_auth_url, auth_url)
+            launch_messages = prepare_auth_url(auth_url)
+            self.app.call_from_thread(self._show_auth_url, auth_url, launch_messages)
             pin_login.run(timeout=300)
             if not pin_login.waitForLogin() or not pin_login.token:
                 self.app.call_from_thread(
@@ -123,10 +150,12 @@ class SetupScreen(Screen[None]):
             return
         self.app.call_from_thread(self._show_libraries, token, libraries)
 
-    def _show_auth_url(self, auth_url: str) -> None:
+    def _show_auth_url(self, auth_url: str, launch_messages: list[str]) -> None:
+        launch_status = "\n".join(launch_messages)
         self._set_status(
-            "Sign in with Plex to authorize Plexbar. "
-            f"Open this URL in your browser:\n{auth_url}\n"
+            "Sign in with Plex to authorize Plexbar.\n"
+            f"{launch_status}\n"
+            f"If needed, open this URL in your browser:\n{auth_url}\n"
             "Waiting for authorization…"
         )
 
@@ -348,41 +377,38 @@ class PlexbarApp(App[None]):
 
         if self.client is None:
             return
-        match item.kind:
-            case ItemKind.BACK:
-                self.go_back()
-            case ItemKind.ARTISTS:
-                self.show_items(self.client.artists(), "Artists")
-            case ItemKind.ALBUMS:
-                self.show_items(self.client.albums(), "Albums")
-            case ItemKind.TRACKS:
-                self.show_items(self.client.tracks(), "Tracks")
-            case ItemKind.PLAYLISTS:
-                self.show_items(self.client.playlists(), "Playlists")
-            case ItemKind.GENRES:
-                self.show_items(self.client.genres(), "Genres")
-            case ItemKind.ARTIST:
-                self.show_items(
-                    self.client.albums(item.source), f"Albums by {item.title}"
-                )
-            case ItemKind.ALBUM | ItemKind.PLAYLIST:
-                self.show_items(self.client.tracks(item.source), item.title)
-            case ItemKind.GENRE:
-                self.show_items(self.client.genre_browse_items(item.source), item.title)
-            case ItemKind.GENRE_ARTISTS:
-                self.show_items(self.client.artists_for_genre(item.source), item.title)
-            case ItemKind.GENRE_ALBUMS:
-                self.show_items(self.client.albums_for_genre(item.source), item.title)
-            case ItemKind.GENRE_ARTIST if item.source is not None:
-                genre, artist = item.source
-                self.show_items(self.client.albums_for_genre(genre, artist), item.title)
-            case ItemKind.GENRE_ALBUM if item.source is not None:
-                genre, album = item.source
-                self.show_items(
-                    self.client.tracks_for_genre_album(genre, album), item.title
-                )
-            case ItemKind.TRACK:
-                self.append_item(item)
+        if item.kind is ItemKind.BACK:
+            self.go_back()
+        elif item.kind is ItemKind.ARTISTS:
+            self.show_items(self.client.artists(), "Artists")
+        elif item.kind is ItemKind.ALBUMS:
+            self.show_items(self.client.albums(), "Albums")
+        elif item.kind is ItemKind.TRACKS:
+            self.show_items(self.client.tracks(), "Tracks")
+        elif item.kind is ItemKind.PLAYLISTS:
+            self.show_items(self.client.playlists(), "Playlists")
+        elif item.kind is ItemKind.GENRES:
+            self.show_items(self.client.genres(), "Genres")
+        elif item.kind is ItemKind.ARTIST:
+            self.show_items(self.client.albums(item.source), f"Albums by {item.title}")
+        elif item.kind in {ItemKind.ALBUM, ItemKind.PLAYLIST}:
+            self.show_items(self.client.tracks(item.source), item.title)
+        elif item.kind is ItemKind.GENRE:
+            self.show_items(self.client.genre_browse_items(item.source), item.title)
+        elif item.kind is ItemKind.GENRE_ARTISTS:
+            self.show_items(self.client.artists_for_genre(item.source), item.title)
+        elif item.kind is ItemKind.GENRE_ALBUMS:
+            self.show_items(self.client.albums_for_genre(item.source), item.title)
+        elif item.kind is ItemKind.GENRE_ARTIST and item.source is not None:
+            genre, artist = item.source
+            self.show_items(self.client.albums_for_genre(genre, artist), item.title)
+        elif item.kind is ItemKind.GENRE_ALBUM and item.source is not None:
+            genre, album = item.source
+            self.show_items(
+                self.client.tracks_for_genre_album(genre, album), item.title
+            )
+        elif item.kind is ItemKind.TRACK:
+            self.append_item(item)
 
     def action_play_now(self) -> None:
         item = self.focused_item()

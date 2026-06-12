@@ -1,6 +1,6 @@
 [project]
 name = "plexbar"
-version = "1.1.1"
+version = "1.2.0"
 description = "A command-line TUI music player for Plex"
 readme = "README.md"
 authors = [{ name = "Christopher Patti", email = "feoh@feoh.org" }]
@@ -8,6 +8,7 @@ requires-python = ">=3.12"
 dependencies = [
   "platformdirs>=4.10.0",
   "plexapi>=4.18.1",
+  "pyperclip>=1.11.0",
   "textual>=8.2.7",
   "textual-image>=0.13.2",
 ]
