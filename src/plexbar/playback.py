@@ -24,38 +24,43 @@ class PlaybackQueue:
 
     tracks: list[QueueTrack] = field(default_factory=list)
     current_index: int = -1
+    next_index: int = 0
 
     @property
     def current(self) -> QueueTrack | None:
-        """Return the current track, if any."""
+        """Return the track currently being played, if any."""
 
         if 0 <= self.current_index < len(self.tracks):
             return self.tracks[self.current_index]
         return None
 
     def append(self, tracks: list[QueueTrack]) -> None:
-        """Append tracks to the queue."""
+        """Append tracks to the queue without changing playback state."""
 
-        first_new_index = len(self.tracks)
         self.tracks.extend(tracks)
-        if self.current_index == -1 and tracks:
-            self.current_index = first_new_index
 
     def replace(self, tracks: list[QueueTrack]) -> QueueTrack | None:
-        """Replace the queue and return the first track."""
+        """Replace the queue and return the first track to play."""
 
         self.tracks = list(tracks)
         self.current_index = 0 if self.tracks else -1
+        self.next_index = 1 if self.tracks else 0
         return self.current
 
     def next(self) -> QueueTrack | None:
-        """Advance to the next track and return it."""
+        """Advance to the next unplayed track and return it."""
 
-        if self.current_index + 1 < len(self.tracks):
-            self.current_index += 1
+        if self.next_index < len(self.tracks):
+            self.current_index = self.next_index
+            self.next_index += 1
             return self.current
         self.current_index = -1
         return None
+
+    def clear_current(self) -> None:
+        """Mark that no queued track is currently being played."""
+
+        self.current_index = -1
 
     def labels(self) -> list[str]:
         """Return display labels for the queue."""
@@ -121,7 +126,8 @@ class MpvPlayer:
             self._loaded = False
             self._paused = False
             return True
-        if self._get_property("idle-active") is not True:
+        idle_active = self._get_property("idle-active")
+        if not idle_active:
             return False
         self._loaded = False
         self._paused = False
@@ -146,7 +152,7 @@ class MpvPlayer:
                 self._process.terminate()
                 try:
                     self._process.wait(timeout=2)
-                except subprocess.TimeoutExpired:
+                except subprocess.TimeoutExpired as _exc:
                     self._process.kill()
         self._process = None
         self._loaded = False
@@ -222,7 +228,11 @@ class MpvPlayer:
                 line, buffer = buffer.split(b"\n", 1)
                 if not line:
                     continue
-                data = json.loads(line.decode("utf-8"))
+                try:
+                    data = json.loads(line.decode("utf-8"))
+                except json.JSONDecodeError as exc:
+                    msg = "mpv returned invalid JSON over IPC."
+                    raise RuntimeError(msg) from exc
                 if not isinstance(data, dict):
                     msg = "mpv returned an invalid IPC response."
                     raise RuntimeError(msg)

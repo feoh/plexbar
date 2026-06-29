@@ -1,4 +1,6 @@
+import asyncio
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
@@ -31,21 +33,153 @@ def test_invalid_config_requires_url_and_token(tmp_path: Path) -> None:
         load_config(config_path)
 
 
-def test_queue_append_replace_and_next() -> None:
-    first = QueueTrack("One", "Artist", "Album", "http://example.test/one.mp3")
-    second = QueueTrack("Two", "Artist", "Album", "http://example.test/two.mp3")
+def make_track(title: str) -> QueueTrack:
+    return QueueTrack(
+        title,
+        "Artist",
+        "Album",
+        f"http://example.test/{title.lower()}.mp3",
+    )
+
+
+def test_queue_append_waits_for_playback_before_marking_current() -> None:
+    first = make_track("One")
+    second = make_track("Two")
     queue = PlaybackQueue()
 
-    queue.append([first])
-    assert queue.current == first
+    queue.append([first, second])
 
-    assert queue.replace([second, first]) == second
-    assert queue.current == second
+    assert queue.current is None
+    assert queue.labels() == [f"  {first.label}", f"  {second.label}"]
     assert queue.next() == first
+    assert queue.current == first
+    assert queue.labels() == [f"▶ {first.label}", f"  {second.label}"]
+    assert queue.next() == second
+    assert queue.next() is None
+
+
+def test_queue_replace_starts_first_track_and_advances_to_second() -> None:
+    first = make_track("One")
+    second = make_track("Two")
+    queue = PlaybackQueue()
+
+    assert queue.replace([first, second]) == first
+    assert queue.current == first
+    assert queue.next() == second
+    assert queue.next() is None
+
+
+def test_queue_append_after_end_advances_to_new_tracks_only() -> None:
+    first = make_track("One")
+    second = make_track("Two")
+    queue = PlaybackQueue()
+
+    assert queue.replace([first]) == first
     assert queue.next() is None
 
     queue.append([second])
-    assert queue.current == second
+
+    assert queue.current is None
+    assert queue.next() == second
+
+
+def test_queue_clear_current_keeps_next_track_ready() -> None:
+    first = make_track("One")
+    second = make_track("Two")
+    queue = PlaybackQueue()
+
+    assert queue.replace([first, second]) == first
+    queue.clear_current()
+
+    assert queue.current is None
+    assert queue.next() == second
+
+
+def test_app_append_and_focus_preserve_now_playing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first = make_track("One")
+    second = make_track("Two")
+    played: list[QueueTrack] = []
+
+    async def scenario() -> None:
+        monkeypatch.setattr(app.PlexbarApp, "on_mount", lambda _self: None)
+        plexbar = app.PlexbarApp()
+        async with plexbar.run_test() as pilot:
+            plexbar.client = cast(
+                Any,
+                SimpleNamespace(playable_tracks=lambda _item: [second]),
+            )
+            plexbar.player = cast(
+                Any,
+                SimpleNamespace(play=lambda track: played.append(track)),
+            )
+
+            plexbar.query_one("#search", app.Input).display = False
+            plexbar.query_one("#browser-list", app.ListView).focus()
+            plexbar.queue.replace([first])
+            plexbar.play(first)
+            plexbar.append_item(BrowserItem("Two", ItemKind.TRACK))
+            await pilot.press("f")
+            await pilot.pause()
+
+            assert plexbar.current_track == first
+            assert played == [first]
+            assert str(plexbar.query_one("#now-playing", app.Static).render()) == (
+                first.label
+            )
+            assert str(plexbar.query_one("#queue", app.Static).render()) == (
+                f"▶ {first.label}\n  {second.label}"
+            )
+            assert str(plexbar.query_one("#status", app.Static).render()) == (
+                "Added 1 track(s) to queue."
+            )
+            assert not plexbar.query_one("#browser", app.Vertical).display
+            cover_art = plexbar.query_one("#cover-art", app.AutoImage)
+            assert str(cover_art.styles.width) == "auto"
+            assert str(cover_art.styles.height) == "auto"
+
+    asyncio.run(scenario())
+
+
+def test_app_stop_clears_playback_state_without_rewinding_queue(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first = make_track("One")
+    second = make_track("Two")
+    stop_calls: list[object] = []
+
+    async def scenario() -> None:
+        monkeypatch.setattr(app.PlexbarApp, "on_mount", lambda _self: None)
+        plexbar = app.PlexbarApp()
+        async with plexbar.run_test() as pilot:
+            plexbar.player = cast(
+                Any,
+                SimpleNamespace(stop=lambda: stop_calls.append(object())),
+            )
+            plexbar.query_one("#search", app.Input).display = False
+            plexbar.query_one("#browser-list", app.ListView).focus()
+            plexbar.current_track = first
+            plexbar.queue.replace([first, second])
+            await pilot.press("f")
+            await pilot.press("s")
+            await pilot.pause()
+
+            assert len(stop_calls) == 1
+            assert plexbar.current_track is None
+            assert plexbar.queue.current is None
+            assert plexbar.queue.next() == second
+            assert str(plexbar.query_one("#now-playing", app.Static).render()) == (
+                "Nothing playing"
+            )
+            assert str(plexbar.query_one("#queue", app.Static).render()) == (
+                f"  {first.label}\n  {second.label}"
+            )
+            assert str(plexbar.query_one("#status", app.Static).render()) == "Stopped."
+            assert plexbar.query_one("#browser", app.Vertical).display
+            assert plexbar.query_one("#browser-list", app.ListView).has_focus
+
+    asyncio.run(scenario())
 
 
 def test_mpv_player_uses_persistent_ipc(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -132,11 +266,11 @@ def test_mpv_player_reaps_idle_track(monkeypatch: pytest.MonkeyPatch) -> None:
 
     player = MpvPlayer()
     player.play(track)
-    assert player.reap_finished() is False
+    assert not player.reap_finished()
 
     idle_active = True
-    assert player.reap_finished() is True
-    assert player.reap_finished() is False
+    assert player.reap_finished()
+    assert not player.reap_finished()
 
 
 def test_browser_item_display_title() -> None:
@@ -161,8 +295,10 @@ def test_prepare_auth_url_copies_and_opens_browser(
 
     messages = app.prepare_auth_url("https://plex.example.test/auth")
 
+    expected_opened_calls = [("https://plex.example.test/auth", 1, True)]
+
     assert copied_urls == ["https://plex.example.test/auth"]
-    assert opened_calls == [("https://plex.example.test/auth", 1, True)]
+    assert opened_calls == expected_opened_calls
     assert messages == [
         "Copied the sign-in URL to your clipboard.",
         "Opened your browser for Plex sign-in.",
@@ -196,24 +332,22 @@ def test_genres_use_track_filter_choices() -> None:
     class FakeGenre:
         title = "Jazz"
 
-    class FakeLibrary:
-        def __init__(self) -> None:
-            self.calls: list[tuple[str, str]] = []
+    calls: list[tuple[str, str]] = []
 
-        def listFilterChoices(self, field: str, libtype: str) -> list[FakeGenre]:
-            self.calls.append((field, libtype))
-            return [FakeGenre()]
+    def list_filter_choices(field: str, libtype: str) -> list[FakeGenre]:
+        calls.append((field, libtype))
+        return [FakeGenre()]
 
-    library = FakeLibrary()
     client = cast(Any, PlexMusicClient.__new__(PlexMusicClient))
-    client.library = library
+    client.library = SimpleNamespace(listFilterChoices=list_filter_choices)
 
     [genre] = client.genres()
+    expected_calls = [("genre", "track")]
 
     assert genre.title == "Jazz"
     assert genre.kind is ItemKind.GENRE
     assert isinstance(genre.source, FakeGenre)
-    assert library.calls == [("genre", "track")]
+    assert calls == expected_calls
 
 
 def test_genre_browse_items_offer_artist_and_album_grouping() -> None:

@@ -469,7 +469,9 @@ class PlexbarApp(App[None]):
     def action_stop(self) -> None:
         if self.player is not None:
             self.player.stop()
+        self.queue.clear_current()
         self.clear_now_playing()
+        self.refresh_queue()
         self.set_status("Stopped.")
 
     def append_item(self, item: BrowserItem) -> None:
