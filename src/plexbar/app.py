@@ -380,9 +380,17 @@ class PlexbarApp(App[None]):
         if item.kind is ItemKind.BACK:
             self.go_back()
         elif item.kind is ItemKind.ARTISTS:
-            self.show_items(self.client.artists(), "Artists")
+            self.show_items(self.client.artist_browse_items(), "Artists")
         elif item.kind is ItemKind.ALBUMS:
-            self.show_items(self.client.albums(), "Albums")
+            self.show_items(self.client.album_browse_items(), "Albums")
+        elif item.kind is ItemKind.ARTISTS_RECENTLY_ADDED:
+            self.show_items(
+                self.client.recently_added_artists(), "Recently Added Artists"
+            )
+        elif item.kind is ItemKind.ALBUMS_RECENTLY_ADDED:
+            self.show_items(
+                self.client.recently_added_albums(), "Recently Added Albums"
+            )
         elif item.kind is ItemKind.TRACKS:
             self.show_items(self.client.tracks(), "Tracks")
         elif item.kind is ItemKind.PLAYLISTS:

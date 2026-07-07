@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
+
 from plexbar import app, playback
 from plexbar.models import BrowserItem, ItemKind, QueueTrack
 from plexbar.playback import MpvPlayer, PlaybackQueue
@@ -326,6 +327,102 @@ def test_root_items_include_genres() -> None:
     client = PlexMusicClient.__new__(PlexMusicClient)
 
     assert client.root_items()[-1] == BrowserItem("Genres", ItemKind.GENRES)
+
+
+def test_artist_and_album_browse_items_put_recently_added_first() -> None:
+    artist = SimpleNamespace(title="Artist")
+    album = SimpleNamespace(title="Album", parentTitle="Artist")
+
+    class FakeLibrary:
+        def search(self, libtype: str) -> list[Any]:
+            if libtype == "artist":
+                return [artist]
+            return []
+
+        def albums(self) -> list[Any]:
+            return [album]
+
+    client = cast(Any, PlexMusicClient.__new__(PlexMusicClient))
+    client.library = FakeLibrary()
+
+    assert client.artist_browse_items() == [
+        BrowserItem("Recently Added", ItemKind.ARTISTS_RECENTLY_ADDED),
+        BrowserItem("Artist", ItemKind.ARTIST, artist),
+    ]
+    assert client.album_browse_items() == [
+        BrowserItem("Recently Added", ItemKind.ALBUMS_RECENTLY_ADDED),
+        BrowserItem("Album", ItemKind.ALBUM, album, "Artist"),
+    ]
+
+
+def test_recently_added_artists_and_albums_use_plex_recently_added() -> None:
+    artist = SimpleNamespace(title="New Artist")
+    album = SimpleNamespace(title="New Album", parentTitle="New Artist")
+    calls: list[str] = []
+
+    class FakeLibrary:
+        def recentlyAdded(self, libtype: str) -> list[Any]:
+            calls.append(libtype)
+            if libtype == "artist":
+                return [artist]
+            if libtype == "album":
+                return [album]
+            return []
+
+    client = cast(Any, PlexMusicClient.__new__(PlexMusicClient))
+    client.library = FakeLibrary()
+
+    assert client.recently_added_artists() == [
+        BrowserItem("New Artist", ItemKind.ARTIST, artist)
+    ]
+    assert client.recently_added_albums() == [
+        BrowserItem("New Album", ItemKind.ALBUM, album, "New Artist")
+    ]
+    assert calls == ["artist", "album"]
+
+
+def test_select_item_routes_artist_and_album_browse_modes() -> None:
+    artists_menu = [
+        BrowserItem("Recently Added", ItemKind.ARTISTS_RECENTLY_ADDED),
+        BrowserItem("Artist", ItemKind.ARTIST),
+    ]
+    albums_menu = [
+        BrowserItem("Recently Added", ItemKind.ALBUMS_RECENTLY_ADDED),
+        BrowserItem("Album", ItemKind.ALBUM),
+    ]
+    recent_artists = [BrowserItem("New Artist", ItemKind.ARTIST)]
+    recent_albums = [BrowserItem("New Album", ItemKind.ALBUM)]
+
+    client = SimpleNamespace(
+        artist_browse_items=lambda: artists_menu,
+        album_browse_items=lambda: albums_menu,
+        recently_added_artists=lambda: recent_artists,
+        recently_added_albums=lambda: recent_albums,
+    )
+    plexbar = cast(Any, app.PlexbarApp())
+    plexbar.client = client
+    shown: list[tuple[list[BrowserItem], str]] = []
+
+    def show_items(
+        items: list[BrowserItem], status: str, *, remember: bool = True
+    ) -> None:
+        shown.append((items, status))
+
+    plexbar.show_items = show_items
+
+    plexbar.select_item(BrowserItem("Artists", ItemKind.ARTISTS))
+    plexbar.select_item(BrowserItem("Albums", ItemKind.ALBUMS))
+    plexbar.select_item(BrowserItem("Recently Added", ItemKind.ARTISTS_RECENTLY_ADDED))
+    plexbar.select_item(BrowserItem("Recently Added", ItemKind.ALBUMS_RECENTLY_ADDED))
+
+    expected = [
+        (artists_menu, "Artists"),
+        (albums_menu, "Albums"),
+        (recent_artists, "Recently Added Artists"),
+        (recent_albums, "Recently Added Albums"),
+    ]
+
+    assert shown == expected
 
 
 def test_genres_use_track_filter_choices() -> None:

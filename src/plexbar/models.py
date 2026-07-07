@@ -13,6 +13,8 @@ class ItemKind(StrEnum):
     ROOT = "root"
     ARTISTS = "artists"
     ALBUMS = "albums"
+    ARTISTS_RECENTLY_ADDED = "artists_recently_added"
+    ALBUMS_RECENTLY_ADDED = "albums_recently_added"
     TRACKS = "tracks"
     PLAYLISTS = "playlists"
     GENRES = "genres"

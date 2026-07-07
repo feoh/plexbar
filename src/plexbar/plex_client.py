@@ -45,26 +45,45 @@ class PlexMusicClient:
             BrowserItem("Genres", ItemKind.GENRES),
         ]
 
+    def artist_browse_items(self) -> list[BrowserItem]:
+        """Return artist rows prefixed with recently added."""
+
+        return [
+            BrowserItem("Recently Added", ItemKind.ARTISTS_RECENTLY_ADDED),
+            *self.artists(),
+        ]
+
+    def album_browse_items(self) -> list[BrowserItem]:
+        """Return album rows prefixed with recently added."""
+
+        return [
+            BrowserItem("Recently Added", ItemKind.ALBUMS_RECENTLY_ADDED),
+            *self.albums(),
+        ]
+
     def artists(self) -> list[BrowserItem]:
         """Return artist rows."""
 
         artists = self.library.search(libtype="artist")
-        return [BrowserItem(item.title, ItemKind.ARTIST, item) for item in artists]
+        return [self._artist_item(artist) for artist in artists]
+
+    def recently_added_artists(self) -> list[BrowserItem]:
+        """Return recently added artist rows."""
+
+        artists = self.library.recentlyAdded(libtype="artist")
+        return [self._artist_item(artist) for artist in artists]
 
     def albums(self, artist: Any | None = None) -> list[BrowserItem]:
         """Return album rows, optionally scoped to an artist."""
 
         albums = artist.albums() if artist is not None else self.library.albums()
-        return [
-            BrowserItem(
-                str(album.title),
-                ItemKind.ALBUM,
-                album,
-                _safe_title(album, "parentTitle"),
-            )
-            for album in albums
-            if album is not None
-        ]
+        return self._album_items(albums)
+
+    def recently_added_albums(self) -> list[BrowserItem]:
+        """Return recently added album rows."""
+
+        albums = self.library.recentlyAdded(libtype="album")
+        return self._album_items(albums)
 
     def tracks(self, parent: Any | None = None) -> list[BrowserItem]:
         """Return track rows, optionally scoped to an album or playlist."""
@@ -217,6 +236,25 @@ class PlexMusicClient:
         """Convert a Plex track to a browser row."""
 
         return BrowserItem(track.title, ItemKind.TRACK, track, _track_subtitle(track))
+
+    def _artist_item(self, artist: Any) -> BrowserItem:
+        """Convert a Plex artist to a browser row."""
+
+        return BrowserItem(str(artist.title), ItemKind.ARTIST, artist)
+
+    def _album_items(self, albums: Iterable[Any]) -> list[BrowserItem]:
+        """Convert Plex albums to browser rows."""
+
+        return [
+            BrowserItem(
+                str(album.title),
+                ItemKind.ALBUM,
+                album,
+                _safe_title(album, "parentTitle"),
+            )
+            for album in albums
+            if album is not None
+        ]
 
     def queue_track(self, track: Track) -> QueueTrack:
         """Convert a Plex track to a playback queue item."""
