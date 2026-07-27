@@ -10,16 +10,22 @@ from plexapi.myplex import MyPlexPinLogin  # type: ignore[import-untyped]
 from textual import on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
+from textual.command import CommandInput, CommandList, CommandPalette, SearchIcon
 from textual.containers import Horizontal, Vertical
+from textual.css.query import NoMatches
 from textual.screen import Screen
 from textual.widgets import (
     Button,
     Footer,
     Header,
+    HelpPanel,
     Input,
+    KeyPanel,
     Label,
     ListItem,
     ListView,
+    LoadingIndicator,
+    Markdown,
     Static,
 )
 from textual_image.widget import AutoImage
@@ -200,6 +206,61 @@ class SetupScreen(Screen[None]):
         self.query_one("#setup-status", Static).update(message)
 
 
+class PlexbarCommandPalette(CommandPalette):
+    """Command palette with its keyboard navigation shown on screen."""
+
+    DEFAULT_CSS = """
+    PlexbarCommandPalette > #palette-navigation {
+        dock: bottom;
+        width: 100%;
+        height: 1;
+        content-align: center middle;
+        color: $text-muted;
+        background: $surface;
+    }
+    """
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="--container"):
+            with Horizontal(id="--input"):
+                yield SearchIcon()
+                yield CommandInput(
+                    placeholder="Search for commands…", select_on_focus=False
+                )
+            with Vertical(id="--results"):
+                yield CommandList()
+                yield LoadingIndicator()
+        yield Static(
+            "Type to filter • ↑/↓ move • PgUp/PgDn page • Enter run • Esc close",
+            id="palette-navigation",
+        )
+
+
+class PlexbarHelpPanel(HelpPanel):
+    """Key reference panel with instructions for using and closing it."""
+
+    DEFAULT_CSS = """
+    PlexbarHelpPanel > #key-panel-navigation {
+        width: 100%;
+        height: auto;
+        min-height: 2;
+        padding: 0 1;
+        color: $text-muted;
+        background: $surface;
+        text-wrap: wrap;
+    }
+    """
+
+    def compose(self) -> ComposeResult:
+        yield Static(
+            "Esc closes this panel. Keep using Plexbar normally; the keys update "
+            "with focus. Use the mouse wheel over this panel to scroll.",
+            id="key-panel-navigation",
+        )
+        yield Markdown(id="widget-help")
+        yield KeyPanel(id="keys-help")
+
+
 class PlexbarApp(App[None]):
     """Plex music player TUI."""
 
@@ -246,6 +307,7 @@ class PlexbarApp(App[None]):
         Binding("n", "next_track", "Next", priority=True),
         Binding("s", "stop", "Stop", priority=True),
         Binding("f", "toggle_focus", "Focus now playing", priority=True),
+        Binding("escape", "hide_help_panel", "Close keys", show=False),
     ]
 
     def __init__(self) -> None:
@@ -274,6 +336,22 @@ class PlexbarApp(App[None]):
                 yield Static("Queue is empty", id="queue")
         yield Static("Starting Plexbar…", id="status")
         yield Footer()
+
+    def action_command_palette(self) -> None:
+        """Open Plexbar's command palette with visible navigation help."""
+
+        if self.use_command_palette and not self.screen.has_class(
+            "--textual-command-palette"
+        ):
+            self.push_screen(PlexbarCommandPalette(id="--command-palette"))
+
+    def action_show_help_panel(self) -> None:
+        """Show a key reference that explains how to use and close it."""
+
+        try:
+            self.screen.query_one(HelpPanel)
+        except NoMatches:
+            self.screen.mount(PlexbarHelpPanel())
 
     def on_mount(self) -> None:
         self.query_one("#search", Input).display = False

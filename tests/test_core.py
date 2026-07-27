@@ -143,6 +143,55 @@ def test_app_append_and_focus_preserve_now_playing(
     asyncio.run(scenario())
 
 
+def test_command_palette_explains_keyboard_navigation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def scenario() -> None:
+        monkeypatch.setattr(app.PlexbarApp, "on_mount", lambda _self: None)
+        plexbar = app.PlexbarApp()
+        async with plexbar.run_test() as pilot:
+            main_screen = plexbar.screen
+
+            await pilot.press("ctrl+p")
+            await pilot.pause()
+
+            assert isinstance(plexbar.screen, app.PlexbarCommandPalette)
+            navigation = plexbar.screen.query_one("#palette-navigation", app.Static)
+            assert "↑/↓ move" in str(navigation.render())
+            assert "Esc close" in str(navigation.render())
+
+            await pilot.press("escape")
+            await pilot.pause()
+
+            assert plexbar.screen is main_screen
+
+    asyncio.run(scenario())
+
+
+def test_key_panel_explains_usage_and_escape_closes_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def scenario() -> None:
+        monkeypatch.setattr(app.PlexbarApp, "on_mount", lambda _self: None)
+        plexbar = app.PlexbarApp()
+        async with plexbar.run_test() as pilot:
+            plexbar.query_one("#browser-list", app.ListView).focus()
+            plexbar.action_show_help_panel()
+            await pilot.pause()
+
+            navigation = plexbar.screen.query_one("#key-panel-navigation", app.Static)
+            assert "Esc closes this panel" in str(navigation.render())
+            assert "keys update with focus" in str(navigation.render())
+
+            await pilot.press("escape")
+            await pilot.pause()
+
+            with pytest.raises(app.NoMatches):
+                plexbar.screen.query_one(app.PlexbarHelpPanel)
+
+    asyncio.run(scenario())
+
+
 def test_app_stop_clears_playback_state_without_rewinding_queue(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

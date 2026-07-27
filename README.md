@@ -99,7 +99,15 @@ browsing offers "By Artist" and "By Album" groupings before listing tracks. Pres
 | `Space` | Pause/resume |
 | `n` | Next track |
 | `s` | Stop playback |
+| `f` | Toggle focus between browsing and now playing |
+| `Ctrl+p` | Open the command palette |
 | `q` | Quit |
+
+In the command palette, type to filter commands, use `Up`/`Down` (or
+`Page Up`/`Page Down`) to move, press `Enter` to run a command, and press
+`Escape` to close it. The palette's **Keys** command opens a context-sensitive
+key reference alongside Plexbar; continue using the app normally while it is
+open, or press `Escape` to close it.
 
 ## Local validation
 
