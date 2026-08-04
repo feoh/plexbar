@@ -192,6 +192,67 @@ def test_key_panel_explains_usage_and_escape_closes_it(
     asyncio.run(scenario())
 
 
+def test_uppercase_q_toggles_full_screen_scrollable_queue(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tracks = [make_track(f"Track {index}") for index in range(40)]
+
+    async def scenario() -> None:
+        monkeypatch.setattr(app.PlexbarApp, "on_mount", lambda _self: None)
+        plexbar = app.PlexbarApp()
+        async with plexbar.run_test(size=(80, 18)) as pilot:
+            plexbar.query_one("#search", app.Input).display = False
+            browser = plexbar.query_one("#browser", app.Vertical)
+            browser_list = plexbar.query_one("#browser-list", app.ListView)
+            now_playing_panel = plexbar.query_one("#now-playing-panel", app.Vertical)
+            queue_scroll = plexbar.query_one("#queue-scroll", app.VerticalScroll)
+            browser_list.focus()
+            plexbar.queue.append(tracks)
+            plexbar.refresh_queue()
+            await pilot.pause()
+            normal_queue_width = queue_scroll.region.width
+
+            await pilot.press("Q")
+            await pilot.pause()
+
+            assert not browser.display
+            assert not now_playing_panel.display
+            assert queue_scroll.has_focus
+            assert queue_scroll.region.width > normal_queue_width
+            assert queue_scroll.max_scroll_y > 0
+
+            await pilot.press("pagedown")
+            await pilot.pause()
+
+            assert queue_scroll.scroll_y > 0
+
+            await pilot.press("f")
+            await pilot.pause()
+
+            assert not browser.display
+            assert now_playing_panel.display
+            cover_art = plexbar.query_one("#cover-art", app.AutoImage)
+            assert str(cover_art.styles.width) == "auto"
+            assert str(cover_art.styles.height) == "auto"
+
+            await pilot.press("Q")
+            await pilot.pause()
+
+            assert not browser.display
+            assert not now_playing_panel.display
+
+            await pilot.press("Q")
+            await pilot.pause()
+
+            assert browser.display
+            assert now_playing_panel.display
+            assert browser_list.has_focus
+            assert str(cover_art.styles.width) != "auto"
+            assert str(cover_art.styles.height) == "18"
+
+    asyncio.run(scenario())
+
+
 def test_app_stop_clears_playback_state_without_rewinding_queue(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

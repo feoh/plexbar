@@ -99,7 +99,8 @@ browsing offers "By Artist" and "By Album" groupings before listing tracks. Pres
 | `Space` | Pause/resume |
 | `n` | Next track |
 | `s` | Stop playback |
-| `f` | Toggle focus between browsing and now playing |
+| `f` | Toggle full-screen now-playing/cover art, including from the queue view |
+| `Q` | Toggle the full-screen queue; use arrows, Page Up/Down, Home, or End to scroll |
 | `Ctrl+p` | Open the command palette |
 | `q` | Quit |
 
