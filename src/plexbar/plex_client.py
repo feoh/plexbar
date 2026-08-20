@@ -1,5 +1,6 @@
 """Plex API wrapper for music browsing."""
 
+import math
 from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any, cast
@@ -265,6 +266,7 @@ class PlexMusicClient:
             album=_safe_title(track, "parentTitle"),
             stream_url=track.getStreamURL(),
             artwork_url=_artwork_url(track),
+            duration_seconds=_duration_seconds(track),
         )
 
     def _default_music_library(self, preferred_name: str | None) -> MusicSection:
@@ -379,6 +381,18 @@ def _same_album(track: Track, album: Any) -> bool:
 
 def _safe_title(item: Any, attr: str) -> str:
     return str(getattr(item, attr, "") or "")
+
+
+def _duration_seconds(track: Track) -> float:
+    """Convert Plex's millisecond track duration to seconds."""
+
+    try:
+        duration = float(getattr(track, "duration", 0) or 0)
+    except (TypeError, ValueError):
+        return 0.0
+    if not math.isfinite(duration):
+        return 0.0
+    return max(duration, 0.0) / 1000
 
 
 def _artwork_url(track: Track) -> str:

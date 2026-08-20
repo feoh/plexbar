@@ -13,6 +13,7 @@ opening a web browser.
 - Search your Plex music library
 - Queue tracks, albums, artists, playlists, and genres
 - Show cover art for the currently playing track or album
+- Show live song progress with elapsed and total time
 - Play, pause/resume, stop, and skip with keyboard shortcuts
 - Local playback through `mpv`
 
@@ -122,4 +123,5 @@ uv run mypy src/plexbar tests
 ## Playback
 
 Plexbar keeps a persistent `mpv` process running and controls it through mpv's
-JSON IPC interface for responsive pause/resume, stop, and track changes.
+JSON IPC interface for responsive pause/resume, stop, track changes, and live
+playback progress updates.

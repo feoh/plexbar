@@ -7,7 +7,7 @@ import pytest
 
 from plexbar import app, playback
 from plexbar.models import BrowserItem, ItemKind, QueueTrack
-from plexbar.playback import MpvPlayer, PlaybackQueue
+from plexbar.playback import MpvPlayer, PlaybackProgress, PlaybackQueue
 from plexbar.plex_client import GenreArtist, PlexMusicClient
 from plexbar.settings import PlexbarConfig, load_config, save_config
 
@@ -41,6 +41,11 @@ def make_track(title: str) -> QueueTrack:
         "Album",
         f"http://example.test/{title.lower()}.mp3",
     )
+
+
+def test_playback_progress_clamps_to_gauge_range() -> None:
+    assert PlaybackProgress(15.0, 10.0).progress_ratio() == 1.0
+    assert PlaybackProgress(5.0, 0.0).progress_ratio() == 0.0
 
 
 def test_queue_append_waits_for_playback_before_marking_current() -> None:
@@ -358,6 +363,77 @@ def test_mpv_ipc_ignores_events_after_command_response(
         "request_id": 1,
         "error": "success",
     }
+
+
+def test_mpv_player_reads_playback_properties(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    track = QueueTrack("One", "Artist", "Album", "http://example.test/one.mp3")
+    commands: list[list[object]] = []
+
+    monkeypatch.setattr(playback.shutil, "which", lambda _name: "/usr/bin/mpv")
+    monkeypatch.setattr(MpvPlayer, "_start_mpv", lambda _self: None)
+    monkeypatch.setattr(MpvPlayer, "is_running", property(lambda _self: True))
+
+    def fake_command(_self: MpvPlayer, command: list[object]) -> dict[str, object]:
+        commands.append(command)
+        properties = {
+            "time-pos": 42.5,
+            "duration": 180.0,
+        }
+        if len(command) == 2 and command[0] == "get_property":
+            return {"error": "success", "data": properties[str(command[1])]}
+        return {"error": "success"}
+
+    monkeypatch.setattr(MpvPlayer, "_command", fake_command)
+
+    player = MpvPlayer()
+    player.play(track)
+
+    assert player.playback_progress() == PlaybackProgress(42.5, 180.0)
+    assert commands == [
+        ["loadfile", track.stream_url, "replace"],
+        ["get_property", "time-pos"],
+        ["get_property", "duration"],
+    ]
+
+
+def test_app_renders_and_refreshes_progress_indicator(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    track = QueueTrack(
+        "One",
+        "Artist",
+        "Album",
+        "http://example.test/one.mp3",
+        duration_seconds=180.0,
+    )
+    progress = PlaybackProgress(42.5, 180.0)
+
+    async def scenario() -> None:
+        monkeypatch.setattr(app.PlexbarApp, "on_mount", lambda _self: None)
+        plexbar = app.PlexbarApp()
+        async with plexbar.run_test() as pilot:
+            plexbar.player = cast(
+                Any,
+                SimpleNamespace(
+                    play=lambda _track: None,
+                    playback_progress=lambda: progress,
+                ),
+            )
+            plexbar.play(track)
+            plexbar.refresh_playback()
+            await pilot.pause()
+
+            progress_bar = plexbar.query_one("#progress", app.ProgressBar)
+            assert progress_bar.progress == pytest.approx(42.5 / 180.0)
+            assert progress_bar.total == 1
+            assert (
+                str(plexbar.query_one("#progress-time", app.Static).render())
+                == "0:42 / 3:00"
+            )
+
+    asyncio.run(scenario())
 
 
 def test_mpv_player_reaps_idle_track(monkeypatch: pytest.MonkeyPatch) -> None:

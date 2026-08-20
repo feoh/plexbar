@@ -57,6 +57,7 @@ class QueueTrack:
     album: str
     stream_url: str
     artwork_url: str = ""
+    duration_seconds: float = 0.0
 
     @property
     def label(self) -> str:

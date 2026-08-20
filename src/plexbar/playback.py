@@ -1,6 +1,7 @@
 """Playback queue and mpv subprocess integration."""
 
 import json
+import math
 import shutil
 import socket
 import subprocess
@@ -16,6 +17,31 @@ from plexbar.models import QueueTrack
 
 class MpvNotFoundError(RuntimeError):
     """Raised when mpv is required but not installed."""
+
+
+@dataclass(frozen=True)
+class PlaybackProgress:
+    """Current playback position and duration reported by mpv."""
+
+    position_seconds: float = 0.0
+    duration_seconds: float = 0.0
+
+    def progress_ratio(self) -> float:
+        """Return the position as a value suitable for a progress bar."""
+
+        if self.duration_seconds <= 0:
+            return 0.0
+        return min(max(self.position_seconds / self.duration_seconds, 0.0), 1.0)
+
+
+def _finite_seconds(value: Any) -> float:
+    """Normalize an optional mpv numeric property for display."""
+
+    try:
+        seconds = float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
+    return seconds if math.isfinite(seconds) and seconds >= 0 else 0.0
 
 
 @dataclass
@@ -107,6 +133,17 @@ class MpvPlayer:
         self._command(["loadfile", track.stream_url, "replace"])
         self._paused = False
         self._loaded = True
+
+    def playback_progress(self) -> PlaybackProgress:
+        """Return the current position and duration from mpv."""
+
+        if not self._loaded:
+            return PlaybackProgress()
+        self._ensure_running()
+        return PlaybackProgress(
+            position_seconds=_finite_seconds(self._get_property("time-pos")),
+            duration_seconds=_finite_seconds(self._get_property("duration")),
+        )
 
     def pause_resume(self) -> None:
         """Toggle pause/resume in mpv."""

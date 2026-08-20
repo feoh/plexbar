@@ -26,12 +26,18 @@ from textual.widgets import (
     ListView,
     LoadingIndicator,
     Markdown,
+    ProgressBar,
     Static,
 )
 from textual_image.widget import AutoImage
 
 from plexbar.models import BrowserItem, ItemKind, QueueTrack
-from plexbar.playback import MpvNotFoundError, MpvPlayer, PlaybackQueue
+from plexbar.playback import (
+    MpvNotFoundError,
+    MpvPlayer,
+    PlaybackProgress,
+    PlaybackQueue,
+)
 from plexbar.plex_client import PlexMusicClient
 from plexbar.settings import (
     CONFIG_PATH,
@@ -295,6 +301,31 @@ class PlexbarApp(App[None]):
         height: auto;
     }
 
+    #progress {
+        width: 100%;
+        height: 3;
+        margin: 0 1;
+    }
+
+    #progress > Bar {
+        width: 1fr;
+        height: 3;
+    }
+
+    #progress > Bar > .bar--bar,
+    #progress > Bar > .bar--complete {
+        color: $primary;
+        background: $surface-lighten-2;
+    }
+
+    #progress-time {
+        width: 100%;
+        height: 1;
+        padding: 0 1;
+        color: $text-muted;
+        content-align: right middle;
+    }
+
     #queue-scroll {
         height: 1fr;
     }
@@ -331,6 +362,7 @@ class PlexbarApp(App[None]):
         self.player: MpvPlayer | None = None
         self.queue = PlaybackQueue()
         self.current_track: QueueTrack | None = None
+        self.playback_progress = PlaybackProgress()
         self.history: list[list[BrowserItem]] = []
         self.items: list[BrowserItem] = []
         self._focus_now_playing = False
@@ -346,8 +378,15 @@ class PlexbarApp(App[None]):
             with Vertical(id="side"):
                 with Vertical(id="now-playing-panel"):
                     yield Label("Now Playing", classes="panel-title")
-                    yield AutoImage(id="cover-art")
                     yield Static("Nothing playing", id="now-playing")
+                    yield ProgressBar(
+                        total=1,
+                        show_percentage=False,
+                        show_eta=False,
+                        id="progress",
+                    )
+                    yield Static("0:00 / 0:00", id="progress-time")
+                    yield AutoImage(id="cover-art")
                 yield Label("Queue", classes="panel-title")
                 with VerticalScroll(id="queue-scroll"):
                     yield Static("Queue is empty", id="queue")
@@ -538,11 +577,28 @@ class PlexbarApp(App[None]):
         self.play_next_track("End of queue.")
 
     def advance_finished_track(self) -> None:
-        """Continue playback when mpv exits at the end of a track."""
+        """Refresh playback progress and continue at the end of a track."""
 
+        self.refresh_playback()
         if self.player is None or not self.player.reap_finished():
             return
         self.play_next_track("End of queue.")
+
+    def refresh_playback(self) -> None:
+        """Refresh the progress indicator from mpv's current properties."""
+
+        if self.player is None or self.current_track is None:
+            return
+        try:
+            progress = self.player.playback_progress()
+        except (OSError, RuntimeError):
+            return
+        duration = progress.duration_seconds or self.current_track.duration_seconds
+        self.playback_progress = PlaybackProgress(
+            progress.position_seconds,
+            duration,
+        )
+        self.update_progress()
 
     def play_next_track(self, end_status: str) -> None:
         """Advance the queue and play the next track, if any."""
@@ -615,7 +671,11 @@ class PlexbarApp(App[None]):
             return
         self.current_track = track
         self.player.play(track)
+        self.playback_progress = PlaybackProgress(
+            duration_seconds=track.duration_seconds
+        )
         self.query_one("#now-playing", Static).update(track.label)
+        self.update_progress()
         self.show_cover_art(track)
         self.set_status(f"Playing {track.label}")
 
@@ -648,7 +708,9 @@ class PlexbarApp(App[None]):
         """Clear the now-playing label and cover art."""
 
         self.current_track = None
+        self.playback_progress = PlaybackProgress()
         self.query_one("#now-playing", Static).update("Nothing playing")
+        self.update_progress()
         cover_art = self.query_one("#cover-art", AutoImage)
         cover_art.image = None
         cover_art.display = False
@@ -685,8 +747,28 @@ class PlexbarApp(App[None]):
             "\n".join(labels) if labels else "Queue is empty"
         )
 
+    def update_progress(self) -> None:
+        """Render the current playback progress and clock labels."""
+
+        self.query_one("#progress", ProgressBar).update(
+            total=1,
+            progress=self.playback_progress.progress_ratio(),
+        )
+        self.query_one("#progress-time", Static).update(
+            f"{format_clock(self.playback_progress.position_seconds)} / "
+            f"{format_clock(self.playback_progress.duration_seconds)}"
+        )
+
     def set_status(self, message: str) -> None:
         self.query_one("#status", Static).update(message)
+
+
+def format_clock(seconds: float) -> str:
+    """Format seconds as a minutes-and-seconds playback clock."""
+
+    total = max(seconds, 0.0)
+    minutes, remaining = divmod(round(total), 60)
+    return f"{minutes}:{remaining:02d}"
 
 
 def main() -> None:
