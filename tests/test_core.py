@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
+from PIL import Image as PILImage
 
 from plexbar import app, playback
 from plexbar.models import BrowserItem, ItemKind, QueueTrack
@@ -144,6 +145,69 @@ def test_app_append_and_focus_preserve_now_playing(
             cover_art = plexbar.query_one("#cover-art", app.AutoImage)
             assert str(cover_art.styles.width) == "auto"
             assert str(cover_art.styles.height) == "auto"
+
+    asyncio.run(scenario())
+
+
+def test_full_screen_cover_art_fits_and_centers_without_clipping(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def scenario() -> None:
+        monkeypatch.setattr(app.PlexbarApp, "on_mount", lambda _self: None)
+        plexbar = app.PlexbarApp()
+        async with plexbar.run_test(size=(120, 40)) as pilot:
+            cover_art = plexbar.query_one("#cover-art", app.AutoImage)
+            cover_art.image = PILImage.new("RGB", (1000, 1000))
+            cover_art.display = True
+            plexbar.query_one("#cover-art-container", app.Container).display = True
+            plexbar.query_one("#search", app.Input).display = False
+            plexbar.query_one("#browser-list", app.ListView).focus()
+
+            await pilot.press("f")
+            await pilot.pause()
+
+            container = plexbar.query_one("#cover-art-container", app.Container)
+            assert container.content_region.contains_region(cover_art.region)
+            assert (
+                cover_art.region.height == container.content_region.height
+                or cover_art.region.width == container.content_region.width
+            )
+            assert (
+                cover_art.region.x - container.content_region.x
+                == (container.content_region.width - cover_art.region.width) // 2
+            )
+            assert not plexbar.query_one("#queue-title", app.Label).display
+            assert not plexbar.query_one("#queue-scroll", app.VerticalScroll).display
+
+            await pilot.press("f")
+            await pilot.pause()
+
+            assert plexbar.query_one("#queue-title", app.Label).display
+            assert plexbar.query_one("#queue-scroll", app.VerticalScroll).display
+
+    asyncio.run(scenario())
+
+
+def test_queue_uses_available_side_panel_space_without_cover_art(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tracks = [make_track(f"Track {index}") for index in range(28)]
+
+    async def scenario() -> None:
+        monkeypatch.setattr(app.PlexbarApp, "on_mount", lambda _self: None)
+        plexbar = app.PlexbarApp()
+        async with plexbar.run_test(size=(120, 40)) as pilot:
+            plexbar.queue.append(tracks)
+            plexbar.refresh_queue()
+            await pilot.pause()
+
+            assert not plexbar.query_one("#cover-art-container", app.Container).display
+            queue_scroll = plexbar.query_one("#queue-scroll", app.VerticalScroll)
+            assert queue_scroll.region.height > 0
+            assert queue_scroll.max_scroll_y > 0
+            assert tracks[0].label in str(
+                plexbar.query_one("#queue", app.Static).render()
+            )
 
     asyncio.run(scenario())
 

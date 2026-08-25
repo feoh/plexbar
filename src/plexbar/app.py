@@ -11,7 +11,7 @@ from textual import on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.command import CommandInput, CommandList, CommandPalette, SearchIcon
-from textual.containers import Horizontal, Vertical, VerticalScroll
+from textual.containers import Container, Horizontal, Vertical, VerticalScroll
 from textual.css.query import NoMatches
 from textual.screen import Screen
 from textual.widgets import (
@@ -291,10 +291,17 @@ class PlexbarApp(App[None]):
         border-top: solid $primary;
     }
 
-    #cover-art {
+    #cover-art-container {
+        display: none;
         width: 100%;
         height: 18;
         margin: 0 1 1 1;
+        align: center middle;
+    }
+
+    #cover-art {
+        width: 100%;
+        height: 18;
     }
 
     #now-playing-panel {
@@ -386,8 +393,9 @@ class PlexbarApp(App[None]):
                         id="progress",
                     )
                     yield Static("0:00 / 0:00", id="progress-time")
-                    yield AutoImage(id="cover-art")
-                yield Label("Queue", classes="panel-title")
+                    with Container(id="cover-art-container"):
+                        yield AutoImage(id="cover-art")
+                yield Label("Queue", id="queue-title", classes="panel-title")
                 with VerticalScroll(id="queue-scroll"):
                     yield Static("Queue is empty", id="queue")
         yield Static("Starting Plexbar…", id="status")
@@ -622,14 +630,28 @@ class PlexbarApp(App[None]):
         else:
             self._focus_now_playing = not self._focus_now_playing
         self.query_one("#browser", Vertical).display = not self._focus_now_playing
+        self._set_full_screen_cover_art(self._focus_now_playing)
+        if not self._focus_now_playing:
+            self.query_one("#browser-list", ListView).focus()
+
+    def _set_full_screen_cover_art(self, full_screen: bool) -> None:
+        """Size cover art to fit its available space without clipping."""
+
+        now_playing_panel = self.query_one("#now-playing-panel", Vertical)
+        cover_art_container = self.query_one("#cover-art-container", Container)
         cover_art = self.query_one("#cover-art", AutoImage)
-        if self._focus_now_playing:
+        self.query_one("#queue-title", Label).display = not full_screen
+        self.query_one("#queue-scroll", VerticalScroll).display = not full_screen
+        if full_screen:
+            now_playing_panel.styles.height = "1fr"
+            cover_art_container.styles.height = "1fr"
             cover_art.styles.width = "auto"
             cover_art.styles.height = "auto"
         else:
+            now_playing_panel.styles.height = "auto"
+            cover_art_container.styles.height = 18
             cover_art.styles.width = "100%"
             cover_art.styles.height = 18
-            self.query_one("#browser-list", ListView).focus()
 
     def action_toggle_queue(self) -> None:
         """Toggle the queue view, returning to the regular split view on exit."""
@@ -638,9 +660,7 @@ class PlexbarApp(App[None]):
         self._focus_now_playing = False
         self.query_one("#browser", Vertical).display = not self._focus_queue
         self.query_one("#now-playing-panel", Vertical).display = not self._focus_queue
-        cover_art = self.query_one("#cover-art", AutoImage)
-        cover_art.styles.width = "100%"
-        cover_art.styles.height = 18
+        self._set_full_screen_cover_art(False)
         if self._focus_queue:
             self.query_one("#queue-scroll", VerticalScroll).focus()
         else:
@@ -685,6 +705,7 @@ class PlexbarApp(App[None]):
         cover_art = self.query_one("#cover-art", AutoImage)
         cover_art.image = None
         cover_art.display = False
+        self.query_one("#cover-art-container", Container).display = False
         if track.artwork_url:
             self._load_cover_art(track.artwork_url)
 
@@ -703,6 +724,7 @@ class PlexbarApp(App[None]):
         cover_art = self.query_one("#cover-art", AutoImage)
         cover_art.image = BytesIO(image_bytes)
         cover_art.display = True
+        self.query_one("#cover-art-container", Container).display = True
 
     def clear_now_playing(self) -> None:
         """Clear the now-playing label and cover art."""
@@ -714,11 +736,11 @@ class PlexbarApp(App[None]):
         cover_art = self.query_one("#cover-art", AutoImage)
         cover_art.image = None
         cover_art.display = False
+        self.query_one("#cover-art-container", Container).display = False
         if self._focus_now_playing:
             self._focus_now_playing = False
             self.query_one("#browser", Vertical).display = not self._focus_queue
-            cover_art.styles.width = "100%"
-            cover_art.styles.height = 18
+            self._set_full_screen_cover_art(False)
             if not self._focus_queue:
                 self.query_one("#browser-list", ListView).focus()
 
