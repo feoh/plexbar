@@ -492,6 +492,7 @@ class PlexbarApp(App[None]):
         search = self.query_one("#search", Input)
         search.display = False
         search.value = ""
+        self.query_one("#browser-list", ListView).focus()
         if not query or self.client is None:
             return
         self.show_items(self.client.search(query), f"Search results for '{query}'.")
