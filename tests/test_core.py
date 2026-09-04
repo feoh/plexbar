@@ -65,13 +65,16 @@ def test_queue_append_waits_for_playback_before_marking_current() -> None:
     assert queue.next() is None
 
 
-def test_queue_replace_starts_first_track_and_advances_to_second() -> None:
+def test_queue_replace_waits_for_playback_before_marking_current() -> None:
     first = make_track("One")
     second = make_track("Two")
     queue = PlaybackQueue()
 
-    assert queue.replace([first, second]) == first
-    assert queue.current == first
+    queue.replace([first, second])
+
+    assert queue.current is None
+    assert queue.labels() == [f"  {first.label}", f"  {second.label}"]
+    assert queue.next() == first
     assert queue.next() == second
     assert queue.next() is None
 
@@ -81,7 +84,8 @@ def test_queue_append_after_end_advances_to_new_tracks_only() -> None:
     second = make_track("Two")
     queue = PlaybackQueue()
 
-    assert queue.replace([first]) == first
+    queue.replace([first])
+    assert queue.next() == first
     assert queue.next() is None
 
     queue.append([second])
@@ -95,11 +99,64 @@ def test_queue_clear_current_keeps_next_track_ready() -> None:
     second = make_track("Two")
     queue = PlaybackQueue()
 
-    assert queue.replace([first, second]) == first
+    queue.replace([first, second])
+    assert queue.next() == first
     queue.clear_current()
 
     assert queue.current is None
     assert queue.next() == second
+
+
+def test_app_replace_and_play_queue_bindings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    old = make_track("Old")
+    first = make_track("One")
+    second = make_track("Two")
+    played: list[QueueTrack] = []
+
+    async def scenario() -> None:
+        monkeypatch.setattr(app.PlexbarApp, "on_mount", lambda _self: None)
+        plexbar = app.PlexbarApp()
+        async with plexbar.run_test() as pilot:
+            plexbar.client = cast(
+                Any,
+                SimpleNamespace(playable_tracks=lambda _item: [first, second]),
+            )
+            plexbar.player = cast(
+                Any,
+                SimpleNamespace(play=lambda track: played.append(track)),
+            )
+            plexbar.queue.append([old])
+            plexbar.query_one("#search", app.Input).display = False
+            plexbar.show_items([BrowserItem("Album", ItemKind.ALBUM)], "Ready.")
+            await pilot.pause()
+            plexbar.query_one("#browser-list", app.ListView).index = 0
+
+            await pilot.press("P")
+            await pilot.pause()
+
+            assert plexbar.queue.tracks == [first, second]
+            assert plexbar.queue.current is None
+            assert played == []
+            assert str(plexbar.query_one("#status", app.Static).render()) == (
+                "Replaced queue with 2 track(s)."
+            )
+
+            await pilot.press("p")
+            await pilot.pause()
+
+            assert plexbar.queue.current == first
+            assert played == [first]
+
+            await pilot.press("p")
+            await pilot.press("n")
+            await pilot.pause()
+
+            assert plexbar.queue.current == second
+            assert played == [first, second]
+
+    asyncio.run(scenario())
 
 
 def test_app_append_and_focus_preserve_now_playing(
@@ -125,6 +182,7 @@ def test_app_append_and_focus_preserve_now_playing(
             plexbar.query_one("#search", app.Input).display = False
             plexbar.query_one("#browser-list", app.ListView).focus()
             plexbar.queue.replace([first])
+            assert plexbar.queue.next() == first
             plexbar.play(first)
             plexbar.append_item(BrowserItem("Two", ItemKind.TRACK))
             await pilot.press("f")
@@ -375,6 +433,7 @@ def test_app_stop_clears_playback_state_without_rewinding_queue(
             plexbar.query_one("#browser-list", app.ListView).focus()
             plexbar.current_track = first
             plexbar.queue.replace([first, second])
+            assert plexbar.queue.next() == first
             await pilot.press("f")
             await pilot.press("s")
             await pilot.pause()

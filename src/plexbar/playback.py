@@ -65,13 +65,12 @@ class PlaybackQueue:
 
         self.tracks.extend(tracks)
 
-    def replace(self, tracks: list[QueueTrack]) -> QueueTrack | None:
-        """Replace the queue and return the first track to play."""
+    def replace(self, tracks: list[QueueTrack]) -> None:
+        """Replace the queue without starting playback."""
 
         self.tracks = list(tracks)
-        self.current_index = 0 if self.tracks else -1
-        self.next_index = 1 if self.tracks else 0
-        return self.current
+        self.current_index = -1
+        self.next_index = 0
 
     def next(self) -> QueueTrack | None:
         """Advance to the next unplayed track and return it."""

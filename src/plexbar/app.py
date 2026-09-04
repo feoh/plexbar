@@ -353,7 +353,8 @@ class PlexbarApp(App[None]):
         Binding("Q", "toggle_queue", "Full-screen queue", priority=True),
         Binding("/", "search", "Search"),
         Binding("enter", "select", "Select/enqueue"),
-        Binding("p", "play_now", "Play now"),
+        Binding("p", "play_queue", "Play queue"),
+        Binding("P", "replace_queue", "Replace queue", priority=True),
         Binding("a", "append", "Append"),
         Binding("space", "pause_resume", "Pause/resume", priority=True),
         Binding("n", "next_track", "Next", priority=True),
@@ -561,17 +562,26 @@ class PlexbarApp(App[None]):
         elif item.kind is ItemKind.TRACK:
             self.append_item(item)
 
-    def action_play_now(self) -> None:
+    def action_play_queue(self) -> None:
+        """Start the next queued track without skipping active playback."""
+
+        if self.queue.current is not None:
+            return
+        self.play_next_track("Queue is empty.")
+
+    def action_replace_queue(self) -> None:
+        """Replace the queue with the focused selection without playing it."""
+
         item = self.focused_item()
         if item is None or self.client is None:
             return
         tracks = self.client.playable_tracks(item)
-        first = self.queue.replace(tracks)
-        if first is None:
+        if not tracks:
             self.set_status(f"Nothing playable for {item.title}.")
             return
-        self.play(first)
+        self.queue.replace(tracks)
         self.refresh_queue()
+        self.set_status(f"Replaced queue with {len(tracks)} track(s).")
 
     def action_append(self) -> None:
         item = self.focused_item()

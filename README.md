@@ -95,7 +95,8 @@ browsing offers "By Artist" and "By Album" groupings before listing tracks. Pres
 | --- | --- |
 | `/` | Search Plex music |
 | `Enter` | Select/drill down, or enqueue focused track |
-| `p` | Play focused track/album/artist/playlist/genre artist/genre album immediately and replace queue |
+| `p` | Play the queue |
+| `P` | Replace the queue with the focused track/album/artist/playlist/genre artist/genre album |
 | `a` | Append focused track/album/artist/playlist/genre artist/genre album to queue |
 | `Space` | Pause/resume |
 | `n` | Next track |
