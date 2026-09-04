@@ -61,6 +61,13 @@ Notes:
 - Textual style assignments like `"auto"` become style scalar objects; assert
   with `str(widget.styles.width)` or `str(widget.styles.height)`.
 
+## Releases
+
+- **Always update `CHANGELOG.md` as part of every release.** Add the new version,
+  release date, user-facing changes, and comparison link before creating the Git
+  tag, GitHub release, or PyPI release. Never publish a release whose changelog
+  entry is missing.
+
 ## Local validation
 
 Use `uv` for all Python commands:
