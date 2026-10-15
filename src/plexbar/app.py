@@ -29,6 +29,7 @@ from textual.widgets import (
     ProgressBar,
     Static,
 )
+from textual.worker import get_current_worker
 from textual_image.widget import AutoImage
 
 from plexbar.models import BrowserItem, ItemKind, QueueTrack
@@ -457,6 +458,15 @@ class PlexbarApp(App[None]):
         self.show_items(
             client.root_items(), "Connected. Choose a section.", remember=False
         )
+        self._warm_search_cache(client)
+
+    @work(thread=True)
+    def _warm_search_cache(self, client: PlexMusicClient) -> None:
+        # Best effort: a failure here just means the first search fetches it.
+        try:
+            client.warm_search_cache()
+        except Exception:  # noqa: BLE001 - search retries the fetch itself
+            return
 
     def show_items(
         self, items: list[BrowserItem], status: str, *, remember: bool = True
@@ -496,7 +506,25 @@ class PlexbarApp(App[None]):
         self.query_one("#browser-list", ListView).focus()
         if not query or self.client is None:
             return
-        self.show_items(self.client.search(query), f"Search results for '{query}'.")
+        self.set_status(f"Searching for '{query}'…")
+        self._search(self.client, query)
+
+    @work(thread=True, exclusive=True, group="search")
+    def _search(self, client: PlexMusicClient, query: str) -> None:
+        """Run a Plex search off the UI thread so the TUI stays responsive."""
+
+        try:
+            items = client.search(query)
+        except Exception as exc:  # noqa: BLE001 - show search failures in TUI
+            if not get_current_worker().is_cancelled:
+                self.call_from_thread(self.set_status, f"Search failed: {exc}")
+            return
+        # A newer search cancels this one; thread workers can't be interrupted,
+        # so drop stale results instead of overwriting the newer search.
+        if not get_current_worker().is_cancelled:
+            self.call_from_thread(
+                self.show_items, items, f"Search results for '{query}'."
+            )
 
     @on(ListView.Selected, "#browser-list")
     def select_browser_row(self, event: ListView.Selected) -> None:

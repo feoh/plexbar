@@ -1,4 +1,5 @@
 import asyncio
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
@@ -325,6 +326,74 @@ def test_empty_search_submission_restores_browser_keyboard_focus(
             await pilot.pause()
 
             assert browser.index == 1
+
+    asyncio.run(scenario())
+
+
+def test_search_runs_in_background_and_shows_results(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    results = [BrowserItem("Abba", ItemKind.ARTIST)]
+    release = threading.Event()
+    search_threads: list[int] = []
+
+    def search(query: str) -> list[BrowserItem]:
+        search_threads.append(threading.get_ident())
+        release.wait(timeout=5)
+        assert query == "abba"
+        return results
+
+    async def scenario() -> None:
+        monkeypatch.setattr(app.PlexbarApp, "on_mount", lambda _self: None)
+        plexbar = app.PlexbarApp()
+        async with plexbar.run_test() as pilot:
+            plexbar.client = cast(Any, SimpleNamespace(search=search))
+            plexbar.query_one("#search", app.Input).display = False
+            plexbar.query_one("#browser-list", app.ListView).focus()
+
+            await pilot.press("/", "a", "b", "b", "a", "enter")
+            await pilot.pause()
+
+            try:
+                assert str(plexbar.query_one("#status", app.Static).render()) == (
+                    "Searching for 'abba'…"
+                )
+                assert plexbar.items == []
+            finally:
+                release.set()
+            await plexbar.workers.wait_for_complete()
+            await pilot.pause()
+
+            assert search_threads != [threading.get_ident()]
+            assert plexbar.items == results
+            assert str(plexbar.query_one("#status", app.Static).render()) == (
+                "Search results for 'abba'."
+            )
+
+    asyncio.run(scenario())
+
+
+def test_search_failure_is_reported_in_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def search(_query: str) -> list[BrowserItem]:
+        raise RuntimeError("server unreachable")
+
+    async def scenario() -> None:
+        monkeypatch.setattr(app.PlexbarApp, "on_mount", lambda _self: None)
+        plexbar = app.PlexbarApp()
+        async with plexbar.run_test() as pilot:
+            plexbar.client = cast(Any, SimpleNamespace(search=search))
+            plexbar.query_one("#search", app.Input).display = False
+            plexbar.query_one("#browser-list", app.ListView).focus()
+
+            await pilot.press("/", "x", "enter")
+            await plexbar.workers.wait_for_complete()
+            await pilot.pause()
+
+            assert str(plexbar.query_one("#status", app.Static).render()) == (
+                "Search failed: server unreachable"
+            )
 
     asyncio.run(scenario())
 
@@ -766,6 +835,125 @@ def test_select_item_routes_artist_and_album_browse_modes() -> None:
     ]
 
     assert shown == expected
+
+
+def test_playlists_filter_audio_on_server_without_fetching_items() -> None:
+    class FakePlaylist:
+        title = "Road Trip"
+
+        def items(self) -> list[Any]:
+            raise AssertionError("playlist items should not be fetched")
+
+    playlist = FakePlaylist()
+    calls: list[str | None] = []
+
+    def playlists(playlistType: str | None = None) -> list[Any]:
+        calls.append(playlistType)
+        return [playlist, None]
+
+    client = cast(Any, PlexMusicClient.__new__(PlexMusicClient))
+    client.server = SimpleNamespace(playlists=playlists)
+
+    assert client.playlists() == [BrowserItem("Road Trip", ItemKind.PLAYLIST, playlist)]
+    assert calls == ["audio"]
+
+
+class FakeSearchLibrary:
+    """Library fake that records fetches and title searches."""
+
+    def __init__(self, artists: list[Any], albums: list[Any]) -> None:
+        self.artist_list = artists
+        self.album_list = albums
+        self.calls: list[tuple[str, str | None]] = []
+
+    def search(self, libtype: str, title: str | None = None) -> list[Any]:
+        self.calls.append((libtype, title))
+        return self.artist_list if libtype == "artist" else []
+
+    def albums(self) -> list[Any]:
+        self.calls.append(("album", None))
+        return self.album_list
+
+
+def make_search_client(library: FakeSearchLibrary) -> Any:
+    client = cast(Any, PlexMusicClient.__new__(PlexMusicClient))
+    client.library = library
+    client.server = SimpleNamespace(playlists=lambda playlistType: [])
+    return client
+
+
+@pytest.mark.parametrize(
+    "query", ["Yo-Yo Ma", "yo-yo ma", "yo yo ma", "YO—YO MA", "yo‐yo"]
+)
+def test_search_matches_artists_ignoring_punctuation_and_case(query: str) -> None:
+    yo_yo_ma = SimpleNamespace(title="Yo‐Yo Ma")
+    library = FakeSearchLibrary([SimpleNamespace(title="Mary"), yo_yo_ma], [])
+
+    items = make_search_client(library).search(query)
+
+    assert items == [BrowserItem("Yo‐Yo Ma", ItemKind.ARTIST, yo_yo_ma)]
+
+
+def test_search_matches_albums_and_typographic_apostrophes() -> None:
+    album = SimpleNamespace(title="Don’t Stop", parentTitle="Band")
+    library = FakeSearchLibrary([], [SimpleNamespace(title="Stop"), album])
+
+    items = make_search_client(library).search("don't stop")
+
+    assert items == [BrowserItem("Don’t Stop", ItemKind.ALBUM, album, "Band")]
+
+
+@pytest.mark.parametrize(
+    ("title", "query"),
+    [
+        ("Claude‐Michel Schönberg", "claude-michel schonberg"),
+        ("Motorhead", "Motörhead"),
+        ("Ilhan Erşahin’s Istanbul Sessions", "ersahin's"),
+        ("Björk", "BJORK"),
+        ("Søren Æsop", "soren aesop"),
+        ("Straße", "strasse"),
+    ],
+)
+def test_search_matches_artists_ignoring_accents(title: str, query: str) -> None:
+    artist = SimpleNamespace(title=title)
+    library = FakeSearchLibrary([SimpleNamespace(title="Other"), artist], [])
+
+    items = make_search_client(library).search(query)
+
+    assert items == [BrowserItem(title, ItemKind.ARTIST, artist)]
+
+
+def test_search_caches_artists_and_albums_but_queries_tracks_each_time() -> None:
+    library = FakeSearchLibrary([SimpleNamespace(title="Abba")], [])
+    client = make_search_client(library)
+
+    client.search("abba")
+    client.search("queen")
+
+    assert library.calls == [
+        ("artist", None),
+        ("album", None),
+        ("track", "abba"),
+        ("track", "queen"),
+    ]
+
+
+def test_browsing_artists_and_albums_refreshes_search_cache() -> None:
+    library = FakeSearchLibrary([], [])
+    client = make_search_client(library)
+    client.search("new")
+    new_artist = SimpleNamespace(title="New Artist")
+    new_album = SimpleNamespace(title="New Album", parentTitle="New Artist")
+    library.artist_list = [new_artist]
+    library.album_list = [new_album]
+
+    client.artists()
+    client.albums()
+
+    assert client.search("new") == [
+        BrowserItem("New Artist", ItemKind.ARTIST, new_artist),
+        BrowserItem("New Album", ItemKind.ALBUM, new_album, "New Artist"),
+    ]
 
 
 def test_genres_use_track_filter_choices() -> None:

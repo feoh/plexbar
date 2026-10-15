@@ -1,15 +1,34 @@
 """Plex API wrapper for music browsing."""
 
 import math
+import unicodedata
 from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any, cast
 
-from plexapi.audio import Album, Artist, Track  # type: ignore[import-untyped]
+from plexapi.audio import Track  # type: ignore[import-untyped]
 from plexapi.library import MusicSection  # type: ignore[import-untyped]
 from plexapi.server import PlexServer  # type: ignore[import-untyped]
 
 from plexbar.models import BrowserItem, ItemKind, QueueTrack
+
+# Plex metadata (often tagged from MusicBrainz) uses typographic punctuation,
+# e.g. "Yo‐Yo Ma" with U+2010 HYPHEN, which never matches what users type.
+# Dashes fold to spaces so "Yo-Yo Ma", "yo yo ma", and "Yo‐Yo Ma" all agree.
+# Letters listed here have no Unicode decomposition, so stripping accents in
+# ``_search_key`` would leave them alone.
+_SEARCH_FOLDS = str.maketrans(
+    {
+        **dict.fromkeys("-\u2010\u2011\u2012\u2013\u2014\u2015\u2212", " "),
+        **dict.fromkeys("\u2018\u2019\u02bc", "'"),
+        **dict.fromkeys("\u201c\u201d", '"'),
+        **dict.fromkeys("øØ", "o"),
+        **dict.fromkeys("łŁ", "l"),
+        **dict.fromkeys("đĐ", "d"),
+        **dict.fromkeys("æÆ", "ae"),
+        **dict.fromkeys("œŒ", "oe"),
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -22,6 +41,11 @@ class GenreArtist:
 
 class PlexMusicClient:
     """Small adapter around python-plexapi for the UI."""
+
+    # Every artist and album, kept for local search matching. Small enough to
+    # fetch whole; refreshed whenever the full Artists or Albums list is browsed.
+    _artist_cache: list[Any] | None = None
+    _album_cache: list[Any] | None = None
 
     def __init__(self, config: Any) -> None:
         self.config = config
@@ -65,7 +89,7 @@ class PlexMusicClient:
     def artists(self) -> list[BrowserItem]:
         """Return artist rows."""
 
-        artists = self.library.search(libtype="artist")
+        artists = self._artist_cache = list(self.library.search(libtype="artist"))
         return [self._artist_item(artist) for artist in artists]
 
     def recently_added_artists(self) -> list[BrowserItem]:
@@ -77,7 +101,9 @@ class PlexMusicClient:
     def albums(self, artist: Any | None = None) -> list[BrowserItem]:
         """Return album rows, optionally scoped to an artist."""
 
-        albums = artist.albums() if artist is not None else self.library.albums()
+        if artist is not None:
+            return self._album_items(artist.albums())
+        albums = self._album_cache = list(self.library.albums())
         return self._album_items(albums)
 
     def recently_added_albums(self) -> list[BrowserItem]:
@@ -155,16 +181,17 @@ class PlexMusicClient:
         return self.tracks(album)
 
     def playlists(self) -> list[BrowserItem]:
-        """Return music playlists."""
+        """Return music playlists.
 
-        playlists = [
-            playlist
-            for playlist in self.server.playlists()
-            if playlist is not None and _is_audio_playlist(playlist)
-        ]
+        Filter by Plex's ``playlistType`` on the server rather than fetching
+        every playlist's items to inspect them, which costs one request per
+        playlist.
+        """
+
         return [
             BrowserItem(str(playlist.title), ItemKind.PLAYLIST, playlist)
-            for playlist in playlists
+            for playlist in self.server.playlists(playlistType="audio")
+            if playlist is not None
         ]
 
     def genres(self) -> list[BrowserItem]:
@@ -181,24 +208,55 @@ class PlexMusicClient:
     def search(self, query: str) -> list[BrowserItem]:
         """Search the configured music library by title.
 
-        PlexAPI's ``MusicSection.search`` does not accept a ``query`` keyword;
-        unknown keywords are treated as filter fields, which can raise for music
-        libraries. Search each supported music type by title instead.
+        Artists and albums are matched locally against cached lists so that
+        punctuation, accent, and case differences (see ``_search_key``) don't hide
+        results. Tracks are too numerous to cache and are searched on the Plex
+        server by title.
         """
 
-        items: list[BrowserItem] = []
-        for libtype in ("artist", "album", "track"):
-            results = self.library.search(title=query, libtype=libtype)
-            for result in results:
-                item = self._item_from_result(result)
-                if item is not None:
-                    items.append(item)
+        key = _search_key(query)
+        items = [
+            self._artist_item(artist)
+            for artist in self._search_artists()
+            if key in _search_key(_safe_title(artist, "title"))
+        ]
+        items.extend(
+            self._album_items(
+                album
+                for album in self._search_albums()
+                if key in _search_key(_safe_title(album, "title"))
+            )
+        )
+        # PlexAPI's ``MusicSection.search`` does not accept a ``query`` keyword;
+        # unknown keywords are treated as filter fields, which can raise for
+        # music libraries. Filter by title instead.
+        items.extend(
+            self.track_item(track)
+            for track in self.library.search(title=query, libtype="track")
+            if _is_track(track)
+        )
         items.extend(
             playlist
             for playlist in self.playlists()
-            if query.casefold() in playlist.title.casefold()
+            if key in _search_key(playlist.title)
         )
         return items
+
+    def warm_search_cache(self) -> None:
+        """Fetch the artist and album lists so the first search is fast."""
+
+        self._search_artists()
+        self._search_albums()
+
+    def _search_artists(self) -> list[Any]:
+        if self._artist_cache is None:
+            self._artist_cache = list(self.library.search(libtype="artist"))
+        return self._artist_cache
+
+    def _search_albums(self) -> list[Any]:
+        if self._album_cache is None:
+            self._album_cache = list(self.library.albums())
+        return self._album_cache
 
     def playable_tracks(self, item: BrowserItem) -> list[QueueTrack]:
         """Expand a browser item to queueable tracks."""
@@ -290,17 +348,6 @@ class PlexMusicClient:
             if _is_track(item)
         ]
 
-    def _item_from_result(self, result: Any) -> BrowserItem | None:
-        if isinstance(result, Artist):
-            return BrowserItem(result.title, ItemKind.ARTIST, result)
-        if isinstance(result, Album):
-            return BrowserItem(
-                result.title, ItemKind.ALBUM, result, _safe_title(result, "parentTitle")
-            )
-        if _is_track(result):
-            return self.track_item(result)
-        return None
-
 
 def music_sections(server: PlexServer) -> list[MusicSection]:
     """Return only music sections from a Plex server."""
@@ -383,6 +430,16 @@ def _safe_title(item: Any, attr: str) -> str:
     return str(getattr(item, attr, "") or "")
 
 
+def _search_key(text: str) -> str:
+    """Normalize text for punctuation-, accent-, and case-insensitive matching."""
+
+    # NFKD splits accented letters into base letter + combining mark ("ö" ->
+    # "o" + U+0308); dropping the marks leaves the unaccented letter.
+    decomposed = unicodedata.normalize("NFKD", text.translate(_SEARCH_FOLDS))
+    unaccented = "".join(c for c in decomposed if not unicodedata.combining(c))
+    return " ".join(unaccented.casefold().split())
+
+
 def _duration_seconds(track: Track) -> float:
     """Convert Plex's millisecond track duration to seconds."""
 
@@ -408,8 +465,3 @@ def _artwork_url(track: Track) -> str:
 
 def _is_track(item: Any) -> bool:
     return isinstance(item, Track) or getattr(item, "TYPE", None) == "track"
-
-
-def _is_audio_playlist(playlist: Any) -> bool:
-    items: Iterable[Any] = playlist.items()
-    return any(_is_track(item) for item in items)
